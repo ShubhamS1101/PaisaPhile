@@ -24,7 +24,7 @@ def create_indicator_agent(llm, toolkit):
             toolkit.compute_stoch,
             toolkit.compute_willr,
         ]
-        time_frame = state["time_frame"]
+        time_frame = state.get("timeframe", "unknown")
         # --- System prompt for LLM ---
         prompt = ChatPromptTemplate.from_messages(
             [
@@ -41,7 +41,7 @@ def create_indicator_agent(llm, toolkit):
                 ),
                 MessagesPlaceholder(variable_name="messages"),
             ]
-        ).partial(kline_data=json.dumps(state["kline_data"], indent=2))
+        ).partial(kline_data=json.dumps(state.get("kline_data", {}), indent=2))
 
         chain = prompt | llm.bind_tools(tools)
         # messages = state["messages"]
@@ -60,7 +60,7 @@ def create_indicator_agent(llm, toolkit):
                 tool_name = call["name"]
                 tool_args = call["args"]
                 # Always provide kline_data
-                tool_args["kline_data"] = copy.deepcopy(state["kline_data"])
+                tool_args["kline_data"] = copy.deepcopy(state.get("kline_data", {}))
                 # Lookup tool by name
                 tool_fn = next(t for t in tools if t.name == tool_name)
                 tool_result = tool_fn.invoke(tool_args)
@@ -91,7 +91,7 @@ def create_indicator_agent(llm, toolkit):
             for call in final_response.tool_calls:
                 tool_name = call["name"]
                 tool_args = call["args"]
-                tool_args["kline_data"] = copy.deepcopy(state["kline_data"])
+                tool_args["kline_data"] = copy.deepcopy(state.get("kline_data", {}))
                 tool_fn = next(t for t in tools if t.name == tool_name)
                 tool_result = tool_fn.invoke(tool_args)
                 messages.append(
@@ -120,4 +120,25 @@ def create_indicator_agent(llm, toolkit):
             "indicator_report": report_content if report_content else "Indicator analysis completed.",
         }
 
-    return indicator_agent_node
+    def wrapper_with_file_save(state):
+        result = indicator_agent_node(state)
+        # Save report to file
+        try:
+            import os
+            os.makedirs("output", exist_ok=True)
+            report = result.get("indicator_report", "No report")
+            # Handle list content (multimodal responses)
+            if isinstance(report, list):
+                report = "\n".join(str(item) for item in report)
+            with open("output/indicator.txt", "w", encoding="utf-8") as f:
+                f.write("=" * 60 + "\n")
+                f.write("INDICATOR ANALYSIS REPORT\n")
+                f.write("=" * 60 + "\n")
+                f.write(str(report))
+                f.write("\n" + "=" * 60 + "\n")
+            print("💾 Saved indicator report to output/indicator.txt")
+        except Exception as e:
+            print(f"⚠️ Could not save indicator report: {e}")
+        return result
+
+    return wrapper_with_file_save

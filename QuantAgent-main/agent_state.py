@@ -1,11 +1,172 @@
-from typing import Annotated, List, TypedDict
+from typing import Annotated, Any, Dict, List, Optional, TypedDict
 
 from langchain_core.messages import BaseMessage
 
 
+# ============================================================================
+# NEW UNIFIED STATE FOR CONVERSATIONAL TRADING ADVISOR
+# ============================================================================
+
+class LookbackWindow(TypedDict, total=False):
+    days: int
+    hours: int
+    minutes: int
+
+
+class TradingAdvisorState(TypedDict):
+    """
+    Unified state for conversational trading advisor system.
+    Supports multi-turn dialogue, dynamic data fetching, and intelligent routing.
+    """
+
+    # ========================================================================
+    # 1. MARKET CONTEXT (SYSTEM-owned)
+    # These fields are managed by the system/data fetcher
+    # ========================================================================
+    user_query: Annotated[
+            str,
+            "Current user query for this turn only (cleared after planning)"
+    ]
+    
+    data_requirement: Annotated[
+        str,
+        "One of: 'required' | 'optional' | 'not_required'"
+    ]
+
+    symbols: Annotated[
+        List[str], 
+        "List of ticker symbols to analyze (e.g., ['BTC-USD', 'AAPL'])"
+    ]
+    
+    horizon: Annotated[
+        str,
+        "Trading horizon: intraday | swing | long_term"
+    ]
+    
+    timeframe: Annotated[
+        Optional[str],
+        "Chart timeframe (e.g., 5m | 15m | 1h | 4h | 1d | 1w). Set by planner or system."
+    ]
+    
+    start_date: Annotated[
+        Optional[str],
+        "Start date for historical data in YYYY-MM-DD format"
+    ]
+    
+    end_date: Annotated[
+        Optional[str],
+        "End date for historical data in YYYY-MM-DD format"
+    ]
+    
+    context_ready: Annotated[
+        bool,
+        "True when market data has been fetched and is ready for analysis"
+    ]
+
+    # ========================================================================
+    # 2. MARKET DATA (SYSTEM-owned)
+    # Populated by data fetcher, consumed by agents
+    # ========================================================================
+    
+    kline_data_map: Annotated[
+        Dict[str, dict],
+        "Map of symbol -> OHLCV data. Key: ticker, Value: {Datetime, Open, High, Low, Close, Volume}"
+    ]
+
+    # ========================================================================
+    # 3. PLANNER OUTPUT (PLANNER-owned)
+    # Set by planner agent after interpreting user query
+    # ========================================================================
+    
+    intent: Annotated[
+        str,
+        "User intent: 'analyze', 'explain', 'compare', 'clarify', or 'chat'"
+    ]
+    
+    mode: Annotated[
+        str,
+        "Analysis mode: 'single' (one symbol), 'comparison' (multiple symbols), 'split' (different timeframes)"
+    ]
+    
+    required_analyses: Annotated[
+        List[str],
+        "List of analyses to run: ['indicator', 'pattern', 'trend', 'decision'] or subset"
+    ]
+
+    # ========================================================================
+    # 4. ANALYSIS CACHE (AGENT-owned)
+    # Updated by respective agents, persists across turns
+    # ========================================================================
+    
+    indicators: Annotated[
+        Dict[str, Any],
+        "Cached indicator analysis results. Key: symbol, Value: {rsi, macd, stoch, etc.}"
+    ]
+    
+    trend: Annotated[
+        Dict[str, Any],
+        "Cached trend analysis results. Key: symbol, Value: {trend_report, trend_image, etc.}"
+    ]
+    
+    pattern: Annotated[
+        Dict[str, Any],
+        "Cached pattern analysis results. Key: symbol, Value: {pattern_report, pattern_image, etc.}"
+    ]
+
+    # ========================================================================
+    # 5. DECISION LAYER (DECISION AGENT-owned)
+    # Final trading recommendation and reasoning
+    # ========================================================================
+    
+    decision: Annotated[
+        Optional[str],
+        "Final trading decision: 'BUY', 'SELL', 'HOLD', or None if not yet decided"
+    ]
+    
+    explanation: Annotated[
+        Optional[str],
+        "Detailed explanation of the decision or answer to user query"
+    ]
+
+    # ========================================================================
+    # 6. CONVERSATION MEMORY (SYSTEM/PLANNER-owned)
+    # Maintains context across multiple turns
+    # ========================================================================
+    
+    conversation_summary: Annotated[
+        str,
+        "Summary of conversation history for context continuity"
+    ]
+    
+    user_preferences: Annotated[
+        Dict[str, str],
+        "Learned user preferences (e.g., preferred timeframe, risk tolerance, favorite symbols)"
+    ]
+    
+    # DO NOT STORE RAW MESSAGE HISTORY
+    # Reason: Storing List[BaseMessage] or raw chat history is forbidden for safety and compactness.
+    #         Only a rolling summary is kept for context continuity.
+
+
+# ============================================================================
+# LEGACY STATE (kept for backward compatibility)
+# ============================================================================
+
 class IndicatorAgentState(TypedDict):
     """State type for the Indicator Agent including messages, input data, and analysis result."""
 
+    # Control flags
+    context_ready: Annotated[
+        bool, "True when ticker/timeframe selected and data fetched, ready for user query"
+    ]
+    user_query: Annotated[
+        str, "User's natural language query or question"
+    ]
+    should_analyze: Annotated[
+        bool, "True if agents should run analysis, False if just setting context"
+    ]
+
+    # Market data context
     kline_data: Annotated[
         dict, "OHLCV dictionary used for computing technical indicators"
     ]

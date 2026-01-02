@@ -6,6 +6,7 @@ matplotlib
 mplfinance
 scipy
 TA-Lib
+pytz
 langchain
 langchain-openai
 langchain-anthropic

@@ -41,7 +41,7 @@ def create_trend_agent(tool_llm, graph_llm, toolkit):
     def trend_agent_node(state):
         # --- Tool definitions ---
         tools = [toolkit.generate_trend_image]
-        time_frame = state["time_frame"]
+        time_frame = state.get("timeframe", "unknown")
 
         # --- Check for precomputed image in state ---
         trend_image_b64 = state.get("trend_image")
@@ -65,7 +65,7 @@ def create_trend_agent(tool_llm, graph_llm, toolkit):
             messages = [
                 SystemMessage(content=system_prompt),
                 HumanMessage(
-                    content=f"Here is the recent kline data:\n{json.dumps(state['kline_data'], indent=2)}"
+                    content=f"Here is the recent kline data:\n{json.dumps(state.get('kline_data', {}), indent=2)}"
                 ),
             ]
 
@@ -84,7 +84,7 @@ def create_trend_agent(tool_llm, graph_llm, toolkit):
                     # Always provide kline_data
                     import copy
 
-                    tool_args["kline_data"] = copy.deepcopy(state["kline_data"])
+                    tool_args["kline_data"] = copy.deepcopy(state.get("kline_data", {}))
                     tool_fn = next(t for t in tools if t.name == tool_name)
                     tool_result = tool_fn.invoke(tool_args)
                     trend_image_b64 = tool_result.get("trend_image")
@@ -166,4 +166,32 @@ def create_trend_agent(tool_llm, graph_llm, toolkit):
             ),
         }
 
-    return trend_agent_node
+    def wrapper_with_file_save(state):
+        result = trend_agent_node(state)
+        try:
+            import os
+            os.makedirs("output", exist_ok=True)
+            
+            # Save report to file
+            report = result.get("trend_report", "No report")
+            if isinstance(report, list):
+                report = "\n".join(str(item) for item in report)
+            with open("output/trend.txt", "w", encoding="utf-8") as f:
+                f.write("=" * 60 + "\n")
+                f.write("TREND ANALYSIS REPORT\n")
+                f.write("=" * 60 + "\n")
+                f.write(str(report))
+                f.write("\n" + "=" * 60 + "\n")
+            print("💾 Saved trend report to output/trend.txt")
+            
+            # Save image if available
+            if result.get("trend_image"):
+                import base64
+                with open("output/trend.png", "wb") as f:
+                    f.write(base64.b64decode(result["trend_image"]))
+                print("💾 Saved trend chart to output/trend.png")
+        except Exception as e:
+            print(f"⚠️ Could not save trend outputs: {e}")
+        return result
+
+    return wrapper_with_file_save

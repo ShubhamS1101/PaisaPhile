@@ -293,3 +293,54 @@ class TradingGraph:
         
         # Refresh the LLMs with the new API key
         self.refresh_llms()
+
+    def prepare_context(self, kline_data: dict, time_frame: str, stock_name: str, 
+                       pattern_image: str = None, trend_image: str = None) -> dict:
+        """
+        Prepare market context WITHOUT running analysis.
+        This is called when ticker/timeframe is selected.
+        
+        Args:
+            kline_data: OHLCV data dictionary
+            time_frame: Timeframe string (e.g., "4h", "1d")
+            stock_name: Stock/ticker name
+            pattern_image: Optional pre-generated pattern image
+            trend_image: Optional pre-generated trend image
+            
+        Returns:
+            State dict with context_ready=True and should_analyze=False
+        """
+        initial_state = {
+            "context_ready": True,
+            "should_analyze": False,  # Do NOT run agents
+            "user_query": None,
+            "kline_data": kline_data,
+            "time_frame": time_frame,
+            "stock_name": stock_name,
+            "pattern_image": pattern_image or "",
+            "trend_image": trend_image or "",
+            "messages": [],
+            "analysis_results": None,
+        }
+        
+        # Run graph - will hit router and go straight to END
+        final_state = self.graph.invoke(initial_state)
+        return final_state
+
+    def run_analysis(self, state: dict) -> dict:
+        """
+        Run full analysis on prepared context.
+        This is called when user asks a query that requires analysis.
+        
+        Args:
+            state: Existing state with context_ready=True
+            
+        Returns:
+            State dict with analysis results
+        """
+        # Update state to trigger analysis
+        state["should_analyze"] = True
+        
+        # Run graph - will execute all agents
+        final_state = self.graph.invoke(state)
+        return final_state

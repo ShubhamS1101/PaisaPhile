@@ -32,7 +32,7 @@ def create_pattern_agent(tool_llm, graph_llm, toolkit):
     def pattern_agent_node(state):
         # --- Tool and pattern definitions ---
         tools = [toolkit.generate_kline_image]
-        time_frame = state["time_frame"]
+        time_frame = state.get("timeframe", "unknown")
         pattern_text = """
         Please refer to the following classic candlestick patterns:
 
@@ -82,6 +82,10 @@ def create_pattern_agent(tool_llm, graph_llm, toolkit):
                 "No precomputed pattern image found in state, generating with tool..."
             )
 
+            # Ensure messages list has initial content
+            if not messages:
+                messages = [HumanMessage(content="Begin pattern analysis.")]
+
             # --- System prompt setup for tool generation ---
             prompt = ChatPromptTemplate.from_messages(
                 [
@@ -94,7 +98,7 @@ def create_pattern_agent(tool_llm, graph_llm, toolkit):
                     ),
                     MessagesPlaceholder(variable_name="messages"),
                 ]
-            ).partial(kline_data=json.dumps(state["kline_data"], indent=2))
+            ).partial(kline_data=json.dumps(state.get("kline_data", {}), indent=2))
 
             chain = prompt | tool_llm.bind_tools(tools)
 
@@ -108,7 +112,7 @@ def create_pattern_agent(tool_llm, graph_llm, toolkit):
                     tool_name = call["name"]
                     tool_args = call["args"]
                     # Always provide kline_data
-                    tool_args["kline_data"] = copy.deepcopy(state["kline_data"])
+                    tool_args["kline_data"] = copy.deepcopy(state.get("kline_data", {}))
                     tool_fn = next(t for t in tools if t.name == tool_name)
                     tool_result = invoke_tool_with_retry(tool_fn, tool_args)
                     pattern_image_b64 = tool_result.get("pattern_image")
@@ -180,6 +184,35 @@ def create_pattern_agent(tool_llm, graph_llm, toolkit):
         return {
             "messages": messages + [final_response],
             "pattern_report": final_response.content,
+            "pattern_image": pattern_image_b64,
         }
 
-    return pattern_agent_node
+    def wrapper_with_file_save(state):
+        result = pattern_agent_node(state)
+        try:
+            import os
+            os.makedirs("output", exist_ok=True)
+            
+            # Save report to file
+            report = result.get("pattern_report", "No report")
+            if isinstance(report, list):
+                report = "\n".join(str(item) for item in report)
+            with open("output/pattern.txt", "w", encoding="utf-8") as f:
+                f.write("=" * 60 + "\n")
+                f.write("PATTERN ANALYSIS REPORT\n")
+                f.write("=" * 60 + "\n")
+                f.write(str(report))
+                f.write("\n" + "=" * 60 + "\n")
+            print("💾 Saved pattern report to output/pattern.txt")
+            
+            # Save image if available
+            if result.get("pattern_image"):
+                import base64
+                with open("output/pattern.png", "wb") as f:
+                    f.write(base64.b64decode(result["pattern_image"]))
+                print("💾 Saved pattern chart to output/pattern.png")
+        except Exception as e:
+            print(f"⚠️ Could not save pattern outputs: {e}")
+        return result
+
+    return wrapper_with_file_save
