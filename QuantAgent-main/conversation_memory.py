@@ -17,7 +17,15 @@ from typing import Dict, Any
 
 def update_conversation_summary(state: Dict[str, Any], user_question: str, system_answer: str, llm) -> str:
     """
-    Update the rolling conversation summary using an LLM.
+    Update the rolling conversation summary AFTER decision agent execution.
+    
+    SUMMARY RULES (STRICT):
+    - Keep summary concise (5-10 lines max)
+    - Capture ONLY: active symbols, horizons, decisions, user intent
+    - DO NOT include: prices, indicators, timestamps, or raw text
+    - Summary is advisory context only
+    - Passed to planner and decision agent ONLY
+    - NEVER passed to analysis agents
     
     Inputs:
         state: Current TradingAdvisorState (contains previous summary, user_preferences)
@@ -27,42 +35,51 @@ def update_conversation_summary(state: Dict[str, Any], user_question: str, syste
     
     Returns:
         New concise summary string (5-10 lines max)
-    
-    Guardrails:
-    - Summary must be concise (max 10 lines)
-    - Must capture: active symbols, horizon, risk, constraints, recent decisions
-    - Must NOT include raw user wording, indicator values, timestamps, or prices
-    - If summary grows too long, LLM is instructed to rewrite compactly
-    - If context changes drastically, summary may be reset or overwritten
     """
     previous_summary = state.get("conversation_summary", "")
     user_prefs = state.get("user_preferences", {})
+    
+    # Extract key context for summary
+    intent = state.get("intent", "")
+    symbols = state.get("symbols", [])
+    horizon = state.get("horizon", "")
+    decision = state.get("decision", "")
 
-    # Compose prompt for LLM
+    # Compose prompt for LLM with STRICT rules
     prompt = f"""
-You are a professional financial advisor maintaining a compact summary of the ongoing conversation.
-Your job is to rewrite the summary after each user interaction, keeping it concise (max 10 lines).
+You are maintaining a CONCISE conversation summary (5-10 lines maximum).
+This is advisory context only, capturing high-level conversation state.
 
 Previous summary:
-{previous_summary}
+{previous_summary or "[New conversation]"}
 
-User question:
-{user_question}
-
-System answer:
-{system_answer}
+Latest interaction:
+- User intent: {intent}
+- Symbols discussed: {', '.join(symbols) if symbols else 'None'}
+- Horizon: {horizon or 'Not specified'}
+- Decision: {decision or 'No decision yet'}
+- User question: {user_question[:100]}...
+- System response: {system_answer[:100]}...
 
 User preferences:
 {user_prefs}
 
-Instructions:
-- DO NOT include raw user wording, indicator values, timestamps, or prices.
-- DO NOT append blindly; rewrite the summary compactly.
-- Capture: active symbols, horizon, risk style, constraints, recent decisions.
-- If context changes, reset or overwrite summary as needed.
-- If summary is too long, compress to 5-10 lines.
+STRICT RULES:
+✓ Capture ONLY: active symbols, horizons, decisions, user intent
+✗ DO NOT include: prices, indicator values (RSI/MACD/etc.), timestamps, dates, raw quotes
+✗ DO NOT append - REWRITE the summary compactly
+✗ DO NOT exceed 10 lines
+✓ If context changes, reset or overwrite summary
+✓ Use bullet points for clarity
 
-Output ONLY the updated summary text. No explanations, no markdown.
+Example good summary:
+- Analyzing BEL.NS for short-term trading
+- User seeks buy signals with moderate risk
+- Recent decision: BUY (bullish confluence)
+- Follow-up: User asking about RSI interpretation
+- Preference: Conservative entries
+
+Output ONLY the updated summary (5-10 lines). No explanations.
 """
 
     # Call LLM to rewrite summary

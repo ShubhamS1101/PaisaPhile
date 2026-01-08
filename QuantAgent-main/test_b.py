@@ -22,10 +22,12 @@ trading_graph = TradingGraph(config=config)
 # INITIAL STATE (EMPTY, CLEAN)
 # ==========================================================
 state = {
-        # 🔑 THIS IS THE KEY FIX
+        # Per-query execution fields (reset every turn)
         "user_query": None,
+        "data_required_keys": [],
+        "required_analysis_keys": {},
 
-        # Planner outputs (initially empty)
+        # Planner outputs (set per turn)
         "intent": "",
         "data_requirement": "",
         "symbols": [],
@@ -35,12 +37,16 @@ state = {
         "end_date": None,
         "mode": "single",
         "required_analyses": [],
+        "need_clarification": False,
 
-        # System fields (not used by planner but required by state)
+        # System fields
         "context_ready": False,
         "kline_data_map": {},
 
-        # Cached analysis (unused here)
+        # Persistent analysis store (NEW)
+        "analysis_store": {},
+
+        # Legacy analysis cache (deprecated, kept for backward compatibility)
         "indicators": {},
         "trend": {},
         "pattern": {},

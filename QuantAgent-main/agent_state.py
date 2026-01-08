@@ -20,13 +20,53 @@ class TradingAdvisorState(TypedDict):
     """
 
     # ========================================================================
-    # 1. MARKET CONTEXT (SYSTEM-owned)
-    # These fields are managed by the system/data fetcher
+    # 1. PER-QUERY EXECUTION FIELDS (RESET EVERY TURN)
+    # These fields control routing and execution for the current query ONLY
+    # They are cleared at the start of each new user query
     # ========================================================================
+    
     user_query: Annotated[
-            str,
-            "Current user query for this turn only (cleared after planning)"
+        str,
+        """
+        Current user query for this turn only.
+        RESET at the start of each new query.
+        Used by planner to determine intent and routing.
+        """
     ]
+    
+    data_required_keys: Annotated[
+        List[str],
+        """
+        List of data cache keys that need to be fetched for this query.
+        Format: ["{symbol}|{timeframe}|{start_date}:{end_date}", ...]
+        Example: ["AAPL|1d|2024-01-01:2025-01-01", "BTC-USD|1h|2026-01-01:2026-01-02"]
+        
+        RESET every turn by planner based on current query requirements.
+        Used by router to determine which data to fetch.
+        NOT passed to LLMs - internal routing only.
+        """
+    ]
+    
+    required_analysis_keys: Annotated[
+        Dict[str, List[str]],
+        """
+        Maps data keys to required analysis types for this query.
+        Format: {"{symbol}|{timeframe}|{start}:{end}": ["indicator", "pattern", "trend"]}
+        Example: {
+            "AAPL|1d|2024-01-01:2025-01-01": ["indicator", "trend", "decision"],
+            "BTC-USD|1h|2026-01-01:2026-01-02": ["pattern", "decision"]
+        }
+        
+        RESET every turn by planner based on required_analyses field.
+        Used by router to determine which agents to invoke.
+        NOT passed to LLMs - internal routing only.
+        """
+    ]
+
+    # ========================================================================
+    # 2. MARKET CONTEXT (PLANNER-owned, per-turn)
+    # These fields are set by planner for the current query
+    # ========================================================================
     
     data_requirement: Annotated[
         str,
@@ -58,31 +98,6 @@ class TradingAdvisorState(TypedDict):
         "End date for historical data in YYYY-MM-DD format"
     ]
     
-    context_ready: Annotated[
-        bool,
-        "True when market data has been fetched and is ready for analysis"
-    ]
-
-    # ========================================================================
-    # 2. MARKET DATA (SYSTEM-owned)
-    # Populated by data fetcher, consumed by agents
-    # ========================================================================
-    
-    kline_data_map: Annotated[
-        Dict[str, dict],
-        "Map of symbol -> OHLCV data. Key: ticker, Value: {Datetime, Open, High, Low, Close, Volume}"
-    ]
-
-    # ========================================================================
-    # 3. PLANNER OUTPUT (PLANNER-owned)
-    # Set by planner agent after interpreting user query
-    # ========================================================================
-    
-    intent: Annotated[
-        str,
-        "User intent: 'analyze', 'explain', 'compare', 'clarify', or 'chat'"
-    ]
-    
     mode: Annotated[
         str,
         "Analysis mode: 'single' (one symbol), 'comparison' (multiple symbols), 'split' (different timeframes)"
@@ -94,27 +109,91 @@ class TradingAdvisorState(TypedDict):
     ]
 
     # ========================================================================
-    # 4. ANALYSIS CACHE (AGENT-owned)
-    # Updated by respective agents, persists across turns
+    # 3. MARKET DATA (SYSTEM-owned, persistent)
+    # Populated by data fetcher, consumed by agents
+    # ========================================================================
+    
+    kline_data_map: Annotated[
+        Dict[str, dict],
+        "Map of symbol -> OHLCV data. Key: ticker, Value: {Datetime, Open, High, Low, Close, Volume}"
+    ]
+    
+    context_ready: Annotated[
+        bool,
+        "True when market data has been fetched and is ready for analysis"
+    ]
+
+    # ========================================================================
+    # 4. PLANNER OUTPUT (PLANNER-owned, per-turn)
+    # Set by planner agent after interpreting user query
+    # ========================================================================
+    
+    intent: Annotated[
+        str,
+        "User intent: 'trade', 'trend', 'compare', 'explain', 'historical', 'price_check', 'clarify'"
+    ]
+    
+    need_clarification: Annotated[
+        bool,
+        "True if planner needs more information from user"
+    ]
+
+    # ========================================================================
+    # 5. PERSISTENT ANALYSIS STORE (CROSS-TURN CACHE)
+    # Structured storage for all analysis results, keyed by context
+    # ========================================================================
+    
+    analysis_store: Annotated[
+        Dict[str, Dict[str, Any]],
+        """
+        Persistent analysis cache keyed by: '{symbol}|{timeframe}|{start_date}:{end_date}'
+        
+        Structure for each key:
+        {
+            "symbol": str,              # e.g., "BEL.NS"
+            "timeframe": str,           # e.g., "15m"
+            "start_date": str,          # e.g., "2026-01-01"
+            "end_date": str,            # e.g., "2026-01-02"
+            "indicator": Optional[dict],  # Indicator analysis results
+            "pattern": Optional[dict],    # Pattern analysis results
+            "trend": Optional[dict],      # Trend analysis results
+            "decision": Optional[dict],   # Decision results
+            "metadata": {
+                "horizon": str,         # e.g., "intraday"
+                "created_at": str       # ISO timestamp
+            }
+        }
+        
+        Rules:
+        - Analysis agents update ONLY their respective fields
+        - Persists across queries within the same conversation
+        - Never flushed unless conversation ends
+        - No raw market data stored here (only analysis results)
+        """
+    ]
+
+    # ========================================================================
+    # 6. LEGACY ANALYSIS CACHE (AGENT-owned, DEPRECATED)
+    # Kept for backward compatibility during migration
     # ========================================================================
     
     indicators: Annotated[
         Dict[str, Any],
-        "Cached indicator analysis results. Key: symbol, Value: {rsi, macd, stoch, etc.}"
+        "DEPRECATED - Use analysis_store instead. Cached indicator analysis results."
     ]
     
     trend: Annotated[
         Dict[str, Any],
-        "Cached trend analysis results. Key: symbol, Value: {trend_report, trend_image, etc.}"
+        "DEPRECATED - Use analysis_store instead. Cached trend analysis results."
     ]
     
     pattern: Annotated[
         Dict[str, Any],
-        "Cached pattern analysis results. Key: symbol, Value: {pattern_report, pattern_image, etc.}"
+        "DEPRECATED - Use analysis_store instead. Cached pattern analysis results."
     ]
 
     # ========================================================================
-    # 5. DECISION LAYER (DECISION AGENT-owned)
+    # 7. DECISION LAYER (DECISION AGENT-owned)
     # Final trading recommendation and reasoning
     # ========================================================================
     
@@ -129,7 +208,7 @@ class TradingAdvisorState(TypedDict):
     ]
 
     # ========================================================================
-    # 6. CONVERSATION MEMORY (SYSTEM/PLANNER-owned)
+    # 8. CONVERSATION MEMORY (SYSTEM/PLANNER-owned)
     # Maintains context across multiple turns
     # ========================================================================
     

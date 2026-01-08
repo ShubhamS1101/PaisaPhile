@@ -2,16 +2,83 @@
 Decision Agent: Final answer generation for conversational trading advisor.
 
 DUAL MODE OPERATION:
-1. DECISION MODE - Trade recommendations (BUY/SELL/NO TRADE)
-2. EXPLANATION/QA MODE - Answer questions using cached analysis
+1. DECISION MODE - Trade recommendations (BUY/SELL/HOLD)
+   - Inputs: user_query, intent, mode, conversation_summary, user_preferences, 
+     FILTERED analysis_store entries relevant to current query
+   - Outputs: decision (BUY/SELL/HOLD), explanation
+   - Triggered when: intent in ["advice", "trade", "compare", "trend_decision"]
+
+2. EXPLANATION MODE - Conversational queries using cached analysis
+   - Inputs: Same as decision mode, but NO new analysis triggered
+   - Uses: cached decisions and analysis from analysis_store
+   - Triggered when: intent in ["explain", "chat", "why", "price_check"]
 
 CRITICAL: This agent NEVER re-analyzes or recomputes indicators.
-It ONLY synthesizes existing results or explains past decisions.
+It ONLY synthesizes existing results from analysis_store or explains past decisions.
 """
 
 import json
 import re
-from typing import Any, Dict
+from typing import Any, Dict, List
+from analysis_store_util import get_filtered_analysis_store
+
+
+# ============================================================================
+# Helper: Format analysis for LLM
+# ============================================================================
+
+def format_analysis_for_llm(filtered_store: Dict[str, Dict[str, Any]]) -> Dict[str, str]:
+    """
+    Format filtered analysis_store entries into readable text for LLM.
+    
+    Args:
+        filtered_store: Dict of {key: analysis_entry}
+        
+    Returns:
+        Dict with formatted strings: {
+            "indicator_text": combined indicator reports,
+            "pattern_text": combined pattern reports,
+            "trend_text": combined trend reports,
+            "symbols_analyzed": list of symbols
+        }
+    """
+    indicator_parts = []
+    pattern_parts = []
+    trend_parts = []
+    symbols = set()
+    
+    for key, entry in filtered_store.items():
+        symbol = entry.get("symbol", "Unknown")
+        timeframe = entry.get("timeframe", "Unknown")
+        symbols.add(symbol)
+        
+        # Format indicator
+        if "indicator" in entry and entry["indicator"]:
+            indicator_data = entry["indicator"]
+            report = indicator_data.get("report", "")
+            if report:
+                indicator_parts.append(f"**{symbol} ({timeframe}):**\n{report}\n")
+        
+        # Format pattern
+        if "pattern" in entry and entry["pattern"]:
+            pattern_data = entry["pattern"]
+            report = pattern_data.get("report", "")
+            if report:
+                pattern_parts.append(f"**{symbol} ({timeframe}):**\n{report}\n")
+        
+        # Format trend
+        if "trend" in entry and entry["trend"]:
+            trend_data = entry["trend"]
+            report = trend_data.get("report", "")
+            if report:
+                trend_parts.append(f"**{symbol} ({timeframe}):**\n{report}\n")
+    
+    return {
+        "indicator_text": "\n".join(indicator_parts) if indicator_parts else "No indicator analysis available",
+        "pattern_text": "\n".join(pattern_parts) if pattern_parts else "No pattern analysis available",
+        "trend_text": "\n".join(trend_parts) if trend_parts else "No trend analysis available",
+        "symbols_analyzed": list(symbols)
+    }
 
 
 # ============================================================================
@@ -20,34 +87,53 @@ from typing import Any, Dict
 
 def generate_trade_decision(state: Dict[str, Any], llm) -> Dict[str, Any]:
     """
-    DECISION MODE: Generate BUY/SELL/NO TRADE recommendation.
+    DECISION MODE: Generate BUY/SELL/HOLD recommendation.
     
-    This mode is triggered when intent = "trade", "compare", or "trend_decision".
-    It synthesizes existing analysis into a trading decision.
+    Inputs:
+    - user_query: Current user question
+    - intent: Query intent (advice, trade, compare, etc.)
+    - mode: Execution mode
+    - conversation_summary: Historical conversation context
+    - user_preferences: User's trading preferences
+    - analysis_store: FILTERED entries relevant to current query
+    
+    This mode synthesizes cached analysis from analysis_store into a trading decision.
     
     SAFETY RULES:
-    - Prefer NO TRADE when signals conflict
+    - Prefer HOLD when signals conflict
     - Never guarantee profits
     - Always acknowledge uncertainty
     - Provide risk warnings
     
     Args:
-        state: Contains indicator_report, pattern_report, trend_report
+        state: Trading advisor state with filtered analysis_store
         llm: Language model for decision synthesis
         
     Returns:
         Updated state with decision and explanation
     """
     
-    # Extract analysis results from state (already computed by agents)
-    indicator_report = state.get("indicator_report", "No indicator analysis available")
-    pattern_report = state.get("pattern_report", "No pattern analysis available")
-    trend_report = state.get("trend_report", "No trend analysis available")
+    # Extract inputs for decision mode
+    user_query = state.get("user_query", "")
+    intent = state.get("intent", "")
+    mode = state.get("mode", "")
+    conversation_summary = state.get("conversation_summary", "")
+    user_preferences = state.get("user_preferences", {})
+    
+    # Get filtered analysis_store (only relevant to current query)
+    filtered_store = get_filtered_analysis_store(state)
+    
+    # Format analysis for LLM
+    formatted = format_analysis_for_llm(filtered_store)
+    indicator_report = formatted["indicator_text"]
+    pattern_report = formatted["pattern_text"]
+    trend_report = formatted["trend_text"]
+    symbols_analyzed = formatted["symbols_analyzed"]
     
     # Extract context
     time_frame = state.get("timeframe", "unknown")
-    symbols = state.get("symbols", [])
-    stock_name = symbols[0] if symbols else state.get("stock_name", "unknown")
+    symbols = state.get("symbols", symbols_analyzed)
+    stock_name = symbols[0] if symbols else "unknown"
     
     # Build decision prompt
     prompt = f"""You are a conservative financial advisor providing trading analysis.
@@ -75,17 +161,23 @@ AVAILABLE ANALYSIS (already computed):
 📉 TREND ANALYSIS:
 {trend_report}
 
+USER CONTEXT:
+- User Query: {user_query}
+- Intent: {intent}
+- Conversation History: {conversation_summary[:200] if conversation_summary else 'New conversation'}
+- User Preferences: {user_preferences}
+
 YOUR TASK:
 Synthesize the above analysis into ONE of these decisions:
 - BUY (if strong bullish confluence)
 - SELL (if strong bearish confluence)
-- NO TRADE (if signals conflict, are weak, or insufficient)
+- HOLD (if signals conflict, are weak, or insufficient)
 
 DECISION CRITERIA:
 ✓ All three analyses should align in the same direction
 ✓ Momentum indicators should confirm the trend
 ✓ Patterns should show clear breakout/breakdown
-✓ Prefer NO TRADE if:
+✓ Prefer HOLD if:
   - RSI shows overbought but trend is up (conflict)
   - Pattern is incomplete or ambiguous
   - Indicators are neutral or mixed
@@ -93,15 +185,17 @@ DECISION CRITERIA:
 
 OUTPUT FORMAT (valid JSON only):
 {{
-  "decision": "BUY | SELL | NO TRADE",
+  "decision": "BUY | SELL | HOLD",
   "confidence": "XX% (realistic estimate)",
   "reasoning": [
     "Bullet point 1 - specific signal",
+    "Bullet point 2 - confirmation"
+  ],
   "risk_warning": "Specific risks for this trade (mandatory)",
   "timeframe_note": "Expected holding period based on {time_frame} timeframe"
 }}
 
-⚠️ Remember: NO TRADE is a valid and often the safest decision. Don't force trades.
+⚠️ Remember: HOLD is a valid and often the safest decision. Don't force trades.
 """
 
     # Invoke LLM
@@ -114,7 +208,7 @@ OUTPUT FORMAT (valid JSON only):
         try:
             decision_data = json.loads(json_match.group(0))
             explanation_parts = [
-                f"**Decision: {decision_data.get('decision', 'NO TRADE')}**",
+                f"**Decision: {decision_data.get('decision', 'HOLD')}**",
                 f"**Confidence: {decision_data.get('confidence', 'N/A')}**",
                 "",
                 "**Reasoning:**"
@@ -127,9 +221,23 @@ OUTPUT FORMAT (valid JSON only):
                 f"⏰ **Timeframe:** {decision_data.get('timeframe_note', time_frame)}"
             ])
             explanation = "\n".join(explanation_parts)
+            
+            # Store decision back to analysis_store for caching
+            from analysis_store_util import update_analysis_field
+            analysis_store = state.get("analysis_store", {})
+            for key in filtered_store.keys():
+                decision_entry = {
+                    "decision": decision_data.get('decision', 'HOLD'),
+                    "confidence": decision_data.get('confidence', 'N/A'),
+                    "reasoning": decision_data.get('reasoning', []),
+                    "risk_warning": decision_data.get('risk_warning', ''),
+                    "timeframe_note": decision_data.get('timeframe_note', '')
+                }
+                update_analysis_field(analysis_store, key, "decision", decision_entry)
+            
             return {
                 **state,
-                "decision": decision_data.get('decision', 'NO TRADE'),
+                "decision": decision_data.get('decision', 'HOLD'),
                 "explanation": explanation,
                 "final_trade_decision": response_text,
             }
@@ -138,7 +246,7 @@ OUTPUT FORMAT (valid JSON only):
             # Fallback if JSON parsing fails
             return {
                 **state,
-                "decision": "NO TRADE",
+                "decision": "HOLD",
                 "explanation": f"Analysis synthesis:\n\n{response_text}\n\n⚠️ Unable to generate structured decision. Please review the analysis above.",
                 "final_trade_decision": response_text,
             }
@@ -146,7 +254,7 @@ OUTPUT FORMAT (valid JSON only):
     # Fallback
     return {
         **state,
-        "decision": "NO TRADE",
+        "decision": "HOLD",
         "explanation": response_text,
         "final_trade_decision": response_text,
     }
@@ -158,9 +266,17 @@ OUTPUT FORMAT (valid JSON only):
 
 def generate_explanation(state: Dict[str, Any], llm) -> Dict[str, Any]:
     """
-    EXPLANATION/QA MODE: Answer user questions using ONLY cached analysis.
+    EXPLANATION MODE: Answer user questions using ONLY cached analysis.
     
-    This mode is triggered when intent = "explain", "why", "price_check", etc.
+    Inputs:
+    - user_query: Current user question
+    - intent: Query intent (explain, chat, why, etc.)
+    - mode: Execution mode
+    - conversation_summary: Historical conversation context
+    - user_preferences: User's trading preferences
+    - analysis_store: Uses cached decisions and analysis (NO new analysis)
+    
+    This mode is triggered when intent in ["explain", "chat", "why", "price_check"].
     It NEVER re-analyzes or recomputes anything.
     
     FORBIDDEN ACTIONS:
@@ -170,38 +286,51 @@ def generate_explanation(state: Dict[str, Any], llm) -> Dict[str, Any]:
     - Modifying market context
     
     ALLOWED ACTIONS:
-    - Explain existing decision
+    - Explain existing decision from analysis_store
     - Clarify reasoning from cached reports
     - Answer "why" questions
-    - Provide factual info from state["kline_data_map"]
+    - Provide conversational responses
     
     Args:
-        state: Contains cached analysis and user query
+        state: Contains cached analysis_store and user query
         llm: Language model for explanation generation
         
     Returns:
         Updated state with explanation
     """
     
-    # Get user query from state or messages
+    # Extract inputs for explanation mode
     user_query = state.get("user_query", "")
-    
-    # Fallback: try to get from messages
-    if not user_query:
-        messages = state.get("messages", [])
-        for msg in reversed(messages):
-            if hasattr(msg, "type") and msg.type == "human":
-                user_query = msg.content
-                break
-    
-    # Extract cached analysis (NEVER recompute - use only what's in state)
-    decision = state.get("decision", "No decision made yet")
-    indicator_report = state.get("indicator_report", "No indicator analysis available")
-    pattern_report = state.get("pattern_report", "No pattern analysis available")
-    trend_report = state.get("trend_report", "No trend analysis available")
-    kline_data_map = state.get("kline_data_map", {})
-    symbols = state.get("symbols", [])
     intent = state.get("intent", "")
+    conversation_summary = state.get("conversation_summary", "")
+    user_preferences = state.get("user_preferences", {})
+    
+    # Get filtered analysis_store (may include previous decisions)
+    filtered_store = get_filtered_analysis_store(state)
+    
+    # If no filtered store, check entire store for explanation mode
+    if not filtered_store:
+        filtered_store = state.get("analysis_store", {})
+    
+    # Format analysis for LLM
+    formatted = format_analysis_for_llm(filtered_store)
+    indicator_report = formatted["indicator_text"]
+    pattern_report = formatted["pattern_text"]
+    trend_report = formatted["trend_text"]
+    symbols_analyzed = formatted["symbols_analyzed"]
+    
+    # Extract cached decision if available
+    decision = "No decision made yet"
+    decision_details = {}
+    for key, entry in filtered_store.items():
+        if "decision" in entry and entry["decision"]:
+            decision_data = entry["decision"]
+            decision = decision_data.get("decision", "No decision")
+            decision_details = decision_data
+            break
+    
+    kline_data_map = state.get("kline_data_map", {})
+    symbols = state.get("symbols", symbols_analyzed)
     
     # ====================================================================
     # SPECIAL CASE: historical/price_check with no data
@@ -297,12 +426,10 @@ def generate_explanation(state: Dict[str, Any], llm) -> Dict[str, Any]:
         else:
             print(f"⚠️ Symbol {symbol} not found in kline_data_map")
     
-    # Check if we have cached analysis
-    has_analysis = (
-        indicator_report != "No indicator analysis available" or
-        pattern_report != "No pattern analysis available" or
-        trend_report != "No trend analysis available" or
-        decision != "No decision made yet"
+    # Check if we have any cached analysis in filtered_store
+    has_analysis = bool(filtered_store) and any(
+        "indicator" in entry or "pattern" in entry or "trend" in entry or "decision" in entry
+        for entry in filtered_store.values()
     )
     
     if not has_analysis and intent == "explain":
@@ -327,6 +454,9 @@ PREVIOUS ANALYSIS (Your Reference):
 
 **Decision Made:** {decision}
 
+**Decision Details:**
+{json.dumps(decision_details, indent=2) if decision_details else 'No detailed decision available'}
+
 **Technical Indicators:**
 {indicator_report}
 
@@ -337,6 +467,12 @@ PREVIOUS ANALYSIS (Your Reference):
 {trend_report}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CONVERSATION CONTEXT:
+{conversation_summary[:300] if conversation_summary else 'New conversation'}
+
+USER PREFERENCES:
+{user_preferences}
 
 USER'S FOLLOW-UP QUESTION:
 {user_query}
@@ -352,30 +488,7 @@ Examples:
 - "Should I still buy?" → Refer back to the decision and supporting evidence
 
 Be friendly, specific, and back everything with data from the analysis above.
-5. If the answer isn't in the provided data, say "I don't have that information"
-
-USER QUESTION:
-{user_query}
-
-AVAILABLE INFORMATION (from previous analysis):
-
-Decision Made: {decision}
-
-Technical Indicators Analysis:
-{indicator_report}
-
-Pattern Analysis:
-{pattern_report}
-
-Trend Analysis:
-{trend_report}
-
-YOUR TASK:
-Answer the user's question DIRECTLY using only the above information.
-- If they ask "why", explain the reasoning from the reports
-- If they ask about a specific indicator, cite the exact value
-- If they ask about price changes, use kline_data_map if available
-- If you don't have the information, admit it clearly
+If the answer isn't in the provided data, say "I don't have that information in my analysis."
 
 Be conversational but factual. Don't speculate beyond what's in the reports.
 """
@@ -399,8 +512,8 @@ def create_final_trade_decider(llm):
     Create a decision agent node with dual-mode operation.
     
     MODE SELECTION based on state["intent"]:
-    - DECISION MODE: intent in ["trade", "compare", "trend_decision"]
-    - EXPLANATION MODE: intent in ["explain", "why", "price_check", "historical"]
+    - DECISION MODE: intent in ["advice", "trade", "compare", "trend_decision"]
+    - EXPLANATION MODE: intent in ["explain", "chat", "why", "price_check", "historical"]
     
     This agent is the FINAL step in the pipeline.
     It NEVER triggers re-analysis or loops.
@@ -415,6 +528,7 @@ def create_final_trade_decider(llm):
     
     def decision_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
         """
+        Decision agent router - delegates to appropriate mode based on intent.
         """
         
         intent = state.get("intent", "")
@@ -426,10 +540,10 @@ def create_final_trade_decider(llm):
         
         # ====================================================================
         # MODE 1: DECISION MODE
-        # Generate trade recommendation (BUY/SELL/NO TRADE)
+        # Generate trade recommendation (BUY/SELL/HOLD)
         # ====================================================================
         
-        if intent in ["trade", "compare", "trend_decision"]:
+        if intent in ["advice", "trade", "compare", "trend_decision"]:
             print(f"Mode: DECISION (generating trade recommendation)")
             print(f"Using cached analysis to synthesize decision...")
             
@@ -445,7 +559,7 @@ def create_final_trade_decider(llm):
         # Answer questions using cached data (NO re-analysis)
         # ====================================================================
         
-        elif intent in ["explain", "why", "price_check", "historical"]:
+        elif intent in ["explain", "chat", "why", "price_check", "historical"]:
             print(f"Mode: EXPLANATION/QA (using cached analysis)")
             print(f"Answering user question without re-analysis...")
             

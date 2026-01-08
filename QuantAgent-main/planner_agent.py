@@ -17,16 +17,25 @@ from langchain_core.messages import HumanMessage, SystemMessage
 # PLANNER SYSTEM PROMPT
 # ============================================================================
 
-PLANNER_SYSTEM_PROMPT = """You are a financial query planning agent. Your ONLY job is to analyze user queries and output STRICT JSON.
+PLANNER_SYSTEM_PROMPT = """You are a financial query planning agent. Your ONLY job is to analyze user queries and output execution instructions in STRICT JSON format.
 
-⚠️ CRITICAL RULES:
-1. You MUST output ONLY valid JSON - no explanations, no markdown, no extra text
-2. You NEVER fetch data, call APIs, or access databases
-3. You NEVER perform analysis - you only PLAN what needs to be done
-4. You NEVER answer user questions directly - you classify them
-5. You NEVER loop or iterate - one query = one JSON output
+⚠️ CRITICAL RULES - WHAT YOU MUST DO:
+1. Output ONLY valid JSON - no explanations, no markdown, no extra text
+2. Analyze user intent and extract parameters ONLY
+3. Populate required fields: intent, data_requirement, symbols, timeframe, horizon, start_date, end_date, required_analyses
+4. If ANY critical information is missing, set need_clarification=true and ask explicitly
 
-Your output format (STRICT JSON):
+⚠️ CRITICAL RULES - WHAT YOU MUST NOT DO:
+1. NEVER fetch data or call APIs
+2. NEVER perform analysis or reasoning about market conditions
+3. NEVER guess missing information (symbols, timeframe, dates)
+4. NEVER reference cached analysis or previous results
+5. NEVER answer user questions directly - only classify and route
+6. NEVER make trading recommendations or predictions
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT (STRICT JSON)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {
   "intent": "<intent_type>",
   "data_requirement": "<required|optional|not_required>",
@@ -78,22 +87,31 @@ Example:
 - Query 4: "but I think it will go up" → intent: "explain" (argue with decision)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DATA REQUIREMENT RULES (STRICT)
+DATA REQUIREMENT RULES (MANDATORY)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Set data_requirement as follows:
 - trade, trend, compare, historical, price_check → "required"
 - explain → "optional" (uses cached analysis, no new data fetch)
 - clarify, chat → "not_required"
 
-If data_requirement = "required":
-- symbols MUST NOT be empty
-- horizon MUST NOT be null
-- timeframe MUST NOT be null
+⚠️ MANDATORY VALIDATION:
+If data_requirement = "required", then ALL of these MUST be non-null:
+- symbols (non-empty array)
+- horizon (non-null string)
+- timeframe (non-null string)
+- start_date (YYYY-MM-DD format)
+- end_date (YYYY-MM-DD format)
 
-If ANY of the above are missing:
+If ANY of the above are missing or cannot be determined:
 - need_clarification MUST be true
-- clarification_question MUST ask for the missing information
-- Do NOT return null silently
+- clarification_question MUST ask SPECIFICALLY for the missing information
+- Do NOT guess, infer, or assume - ask explicitly
+
+Example clarification questions:
+- Missing symbol: "Which stock or cryptocurrency would you like to analyze? Please provide the ticker symbol (e.g., AAPL, BTC-USD)."
+- Missing timeframe: "What timeframe are you interested in? Please specify (e.g., 5m, 1h, 1d, 1w)."
+- Missing horizon: "What's your trading horizon? Intraday (minutes to hours), swing (days to weeks), or long-term (months)?"
+- Ambiguous query: "I need more details to help you. Please specify: which asset, what timeframe, and what you'd like to know."
 
 
 
@@ -150,8 +168,11 @@ start_date / end_date (CRITICAL - required if data_requirement = "required"):
      - Both must be null
   
   ⚠️ NEVER leave start_date or end_date as null when data_requirement = "required"
+  ⚠️ If you cannot determine the dates, set need_clarification=true and ask
 
-  
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REQUIRED_ANALYSES FIELD (STRICT ROUTING)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    
 required_analyses determines which internal agents must run to answer the user query.
 
@@ -163,6 +184,9 @@ Meanings:
 - pattern → candlestick patterns and chart formations
 - trend → market structure, support/resistance, directional bias
 - decision → final synthesis or explanation using existing information ONLY
+
+⚠️ CRITICAL: Do NOT guess which analyses are needed based on market knowledge
+⚠️ CRITICAL: Do NOT perform analysis - only specify what needs to be done
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ANALYSIS SELECTION RULES (STRICT)
@@ -196,13 +220,24 @@ If intent = "clarify":
 → []
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-IMPORTANT SAFETY RULES
+IMPORTANT SAFETY RULES (FINAL CHECKS)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-- NEVER include "decision" alone for trade or trend intent unless the user explicitly wants a quick answer.
-- NEVER include "indicator" or "pattern" if the user asks only for a price or explanation.
-- If required_analyses is empty, the system must ask a clarification question.
-- If context data is missing, the decision agent must respond qualitatively or ask for clarification.
+1. NEVER perform analysis yourself - only route to appropriate agents
+2. NEVER reference cached data or previous analysis - you don't have access to it
+3. NEVER make assumptions about missing information - ask for clarification
+4. NEVER include reasoning about market conditions or indicators in your output
+5. If you're unsure about ANY parameter, set need_clarification=true
+6. Your output is authoritative ONLY for the current turn - don't assume persistence
+7. If required_analyses is empty for trade/trend intent, something is wrong - set need_clarification=true
+
+⚠️ REMEMBER: 
+- OUTPUT ONLY JSON
+- NO OTHER TEXT
+- NO MARKDOWN
+- NO EXPLANATIONS
+- NO ANALYSIS
+- JUST ROUTING INSTRUCTIONS
 
 
 need_clarification (required):
@@ -449,7 +484,30 @@ CURRENT_TIME: {current_time} IST
             updated_state["data_requirement"] = "not_required"
 
         # --------------------------------------------------
-        # 5. Debug (KEEP THIS while developing)
+        # 5. Populate execution keys for cache-aware routing
+        # --------------------------------------------------
+        from analysis_store_util import populate_execution_keys
+        
+        # Only populate if we have data requirements
+        if (updated_state["data_requirement"] == "required" and 
+            updated_state["symbols"] and 
+            updated_state["timeframe"] and
+            updated_state["start_date"] and
+            updated_state["end_date"] and
+            updated_state["required_analyses"]):
+            
+            populate_execution_keys(
+                state=updated_state,
+                symbols=updated_state["symbols"],
+                timeframe=updated_state["timeframe"],
+                start_date=updated_state["start_date"],
+                end_date=updated_state["end_date"],
+                required_analyses=updated_state["required_analyses"]
+            )
+            print(f"✓ Execution keys populated: {len(updated_state.get('data_required_keys', []))} data keys, {len(updated_state.get('required_analysis_keys', {}))} analysis keys")
+
+        # --------------------------------------------------
+        # 6. Debug (KEEP THIS while developing)
         # --------------------------------------------------
         print("\n" + "=" * 60)
         print("PLANNER OUTPUT")
@@ -532,11 +590,15 @@ def system_validator(state: Dict[str, Any]) -> ValidationResult:
     System validator - validates planner output before data fetch.
     Pure Python function with NO LLM calls.
     
+    ENFORCES STRICT RULES:
+    1. If data_requirement = "required", ALL fields (symbols, horizon, timeframe, start_date, end_date) must be non-null
+    2. No guessing - if information is missing, request clarification
+    3. Validate required_analyses is appropriate for intent
+    
     This prevents unsafe financial advice by enforcing:
+    - Complete information before data fetch
     - Consistent timeframes across comparisons
     - Appropriate analysis for query types
-    - Required information completeness
-    - Mixed horizon detection
     
     Args:
         state: TradingAdvisorState after planner execution
@@ -546,25 +608,62 @@ def system_validator(state: Dict[str, Any]) -> ValidationResult:
     """
     
     intent = state.get("intent", "")
+    data_requirement = state.get("data_requirement", "not_required")
     horizon = state.get("horizon")
     symbols = state.get("symbols", [])
     mode = state.get("mode", "single")
     timeframe = state.get("timeframe")
+    start_date = state.get("start_date")
+    end_date = state.get("end_date")
     required_analyses = state.get("required_analyses", [])
     
     # ========================================================================
-    # RULE 1: If planner already flagged need for clarification, return immediately
-    # This prevents unsafe financial advice by ensuring we have clear user intent
+    # RULE 0: Check if planner already requested clarification
     # ========================================================================
     
-    # Check if planner set clarification in explanation field
-    if intent == "clarify" or state.get("explanation"):
-        clarification = state.get("explanation", "Could you provide more details about what you'd like to analyze?")
+    if intent == "clarify" or state.get("need_clarification"):
+        clarification = state.get("clarification_question") or state.get("explanation", "Could you provide more details?")
         return ValidationResult(
             approved=False,
             reason="Planner requested clarification",
             clarification=clarification
         )
+    
+    # ========================================================================
+    # RULE 1: MANDATORY - If data_requirement = "required", validate ALL fields
+    # This is the strictest rule - no data fetch without complete information
+    # ========================================================================
+    
+    if data_requirement == "required":
+        missing_fields = []
+        
+        if not symbols or len(symbols) == 0:
+            missing_fields.append("symbols")
+        if not horizon:
+            missing_fields.append("horizon")
+        if not timeframe:
+            missing_fields.append("timeframe")
+        if not start_date:
+            missing_fields.append("start_date")
+        if not end_date:
+            missing_fields.append("end_date")
+        
+        if missing_fields:
+            # Build specific clarification question based on what's missing
+            if "symbols" in missing_fields:
+                clarification = "Which stock or cryptocurrency would you like to analyze? Please provide the ticker symbol (e.g., AAPL for Apple, BTC-USD for Bitcoin)."
+            elif "timeframe" in missing_fields or "horizon" in missing_fields:
+                clarification = "What timeframe and trading horizon are you interested in? For example: intraday (5m, 15m, 1h), swing (1d, 1w), or long-term (1mo)."
+            elif "start_date" in missing_fields or "end_date" in missing_fields:
+                clarification = "What date range would you like to analyze? For example: 'current prices', 'last 30 days', or a specific date range."
+            else:
+                clarification = f"I need more information to proceed. Missing: {', '.join(missing_fields)}. Please provide these details."
+            
+            return ValidationResult(
+                approved=False,
+                reason=f"data_requirement=required but missing: {', '.join(missing_fields)}",
+                clarification=clarification
+            )
     
     # ========================================================================
     # RULE 2: If horizon is missing for analysis intents, ask for clarification
