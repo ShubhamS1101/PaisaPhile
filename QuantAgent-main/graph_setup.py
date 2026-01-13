@@ -4,8 +4,10 @@ from datetime import datetime, timedelta
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
 
-from agent_state import TradingAdvisorState, IndicatorAgentState
-from decision_agent import create_final_trade_decider
+from agent_state import TradingAdvisorState
+# Legacy decision agent moved to decision_agent_legacy.py
+from decision_agent_new import create_decision_agent  # New non-conversational decision agent
+from dialogue_agent import create_dialogue_agent  # New conversational dialogue agent
 from indicator_agent import create_indicator_agent
 from pattern_agent import create_pattern_agent
 from trend_agent import create_trend_agent
@@ -26,12 +28,10 @@ class SetGraph:
         agent_llm: ChatOpenAI,
         graph_llm: ChatOpenAI,
         toolkit: TechnicalTools,
-        use_new_state: bool = True,
     ):
         self.agent_llm = agent_llm
         self.graph_llm = graph_llm
         self.toolkit = toolkit
-        self.use_new_state = use_new_state
 
     # ============================================================
     # DATA FETCH NODE
@@ -249,7 +249,7 @@ class SetGraph:
     def set_graph(self):
 
         # ----------------------------
-        # AGENTS
+        # AGENTS (NEW ARCHITECTURE)
         # ----------------------------
         indicator_agent = create_indicator_agent(self.graph_llm, self.toolkit)
         pattern_agent = create_pattern_agent(
@@ -258,7 +258,9 @@ class SetGraph:
         trend_agent = create_trend_agent(
             self.agent_llm, self.graph_llm, self.toolkit
         )
-        decision_agent = create_final_trade_decider(self.graph_llm)
+        # NEW: Split decision (non-conversational) and dialogue (conversational)
+        decision_agent = create_decision_agent(self.graph_llm)
+        dialogue_agent = create_dialogue_agent(self.graph_llm)
 
         planner_node = create_planner_agent(self.graph_llm)
         fetch_node = self._fetch_data_node()
@@ -270,20 +272,60 @@ class SetGraph:
             return state
 
         # ----------------------------
-        # ROUTE DECIDER (FIXED)
+        # ROUTE DECIDER (UPDATED FOR DECISION + DIALOGUE SPLIT)
         # ----------------------------
         def route_decider(state: TradingAdvisorState):
+            """
+            Routes execution based on analyses_required.
+            
+            NEW ROUTING RULES:
+            1. If intent in ["trade", "trend", "compare"]:
+               → analysis agents (if needed)
+               → decision agent
+               → dialogue agent
+            
+            2. If intent == "explain":
+               → dialogue agent ONLY (no analysis, no decision)
+            
+            3. If intent == "clarify":
+               → dialogue agent ONLY
+            """
 
-            required = state.get("required_analyses", [])
-
+            # Derive flat analysis list from analyses_required
+            analyses_required_dict = state.get("analyses_required", {})
+            canonical_order = ["indicator", "pattern", "trend", "decision"]
+            required_set = set()
+            for spec in analyses_required_dict.values():
+                if isinstance(spec, dict):
+                    required_set.update(spec.get("run", []))
+            required = [a for a in canonical_order if a in required_set]
+            
+            # ──────────────────────────────────────────────────────────
+            # CASE 1: Pure explanation/clarification queries
+            # ──────────────────────────────────────────────────────────
+            if intent in ["explain", "clarify"]:
+                # Skip all analysis and decision, go straight to dialogue
+                if not required:
+                    print("→ Router: Explanation query → dialogue_node")
+                    return "dialogue_node"
+            
+            # ──────────────────────────────────────────────────────────
+            # CASE 2: No more analyses required
+            # ──────────────────────────────────────────────────────────
             if not required:
-                print("→ Router: No analyses required → END")
-                return "end"
+                # Check if we need to run dialogue
+                # Dialogue runs if we have an explanation to generate
+                if state.get("decision") is not None or intent in ["price_check"]:
+                    print("→ Router: All analyses done → dialogue_node")
+                    return "dialogue_node"
+                else:
+                    print("→ Router: No analyses required → END")
+                    return "end"
 
             next_step = required[0]
 
             # Allow decision-only flows without market data
-            if next_step != "decision" and not state.get("context_ready", False):
+            if next_step != "decision" and next_step != "dialogue" and not state.get("context_ready", False):
                 print("→ Router: context not ready → END")
                 return "end"
 
@@ -292,6 +334,7 @@ class SetGraph:
                 "pattern": "pattern_node",
                 "trend": "trend_node",
                 "decision": "decision_node",
+                "dialogue": "dialogue_node",
             }
 
             route = routing_map.get(next_step, "end")
@@ -448,10 +491,11 @@ class SetGraph:
                 
                 print(f"  ✓ Pattern analysis computed and cached for {key}")
             
-            # Remove pattern from required_analyses (per-turn tracking)
-            state["required_analyses"] = [
-                a for a in state.get("required_analyses", []) if a != "pattern"
-            ]
+            # Mark indicator as complete in analyses_required
+            analyses_required = state.get("analyses_required", {})
+            for spec in analyses_required.values():
+                if isinstance(spec, dict) and "indicator" in spec.get("run", []):
+                    spec["run"].remove("indicator")
             return state
 
         def run_trend(state: TradingAdvisorState):
@@ -523,40 +567,37 @@ class SetGraph:
                 
                 print(f"  ✓ Trend analysis computed and cached for {key}")
             
-            # Remove trend from required_analyses (per-turn tracking)
-            state["required_analyses"] = [
-                a for a in state.get("required_analyses", []) if a != "trend"
-            ]
+            # Mark trend as complete in analyses_required
+            analyses_required = state.get("analyses_required", {})
+            for spec in analyses_required.values():
+                if isinstance(spec, dict) and "trend" in spec.get("run", []):
+                    spec["run"].remove("trend")
             return state
 
         def run_decision(state: TradingAdvisorState):
             """
-            Decision agent router - selects mode based on intent.
+            Decision agent - generates structured decision ONLY.
             
-            MODE 1: DECISION MODE (intent in ["advice", "trade", "compare", "trend_decision"])
-            - Synthesizes cached analysis from analysis_store
-            - Outputs BUY/SELL/HOLD decision
-            - Stores decision back to analysis_store
-            
-            MODE 2: EXPLANATION MODE (intent in ["explain", "chat", "why", "price_check"])
-            - Conversational responses using cached analysis
-            - NO new analysis triggered
-            - Uses existing decisions from analysis_store
+            RUNS WHEN: intent in ["trade", "trend", "compare"]
             
             VALIDATION:
-            - Before decision mode: Validates analysis keys match current query
+            - Validates analysis keys match current query
             - Ensures no OHLCV data present in decision input
             - Triggers clarification if validation fails
-            """
-            print("  ▸ Decision Agent")
             
-            # Determine mode based on intent
+            DOES NOT:
+            - Generate conversational text
+            - Read conversation_summary
+            - Answer user questions
+            """
+            print("  ▸ Decision Agent (Non-Conversational)")
+            
+            # Check if decision is needed for this intent
             intent = state.get("intent", "")
-            decision_mode_intents = ["advice", "trade", "compare", "trend_decision"]
-            explanation_mode_intents = ["explain", "chat", "why", "price_check", "historical"]
+            decision_mode_intents = ["trade", "trend", "compare"]
             
             if intent in decision_mode_intents:
-                print(f"    → Decision Mode (intent: {intent})")
+                print(f"    → Generating structured decision (intent: {intent})")
                 
                 # ═══════════════════════════════════════════════════════════
                 # VALIDATION BEFORE DECISION MODE
@@ -634,14 +675,12 @@ class SetGraph:
                 
                 print("    ✓ Validation passed - Proceeding with decision")
                 
-            elif intent in explanation_mode_intents:
-                print(f"    → Explanation Mode (intent: {intent})")
+                # Run decision agent (non-conversational)
+                result = decision_agent(state)
+                state.update(result)
             else:
-                print(f"    → Default to Explanation Mode (intent: {intent})")
-
-            # Run decision agent (internally routes based on intent)
-            result = decision_agent(state)
-            state.update(result)
+                # No decision needed for explain/clarify intents
+                print(f"    → Skipping decision for intent: {intent}")
 
             # Save decision output to file
             try:
@@ -666,23 +705,73 @@ class SetGraph:
             except Exception as e:
                 print(f"⚠️ Could not save decision output: {e}")
 
+            # Mark decision as complete in analyses_required
+            analyses_required = state.get("analyses_required", {})
+            for spec in analyses_required.values():
+                if isinstance(spec, dict) and "decision" in spec.get("run", []):
+                    spec["run"].remove("decision")
+
+            return state
+
+        def run_dialogue(state: TradingAdvisorState):
+            """
+            Dialogue agent - generates user-facing explanation.
+            
+            RUNS FOR: ALL queries (after decision if applicable)
+            
+            READS:
+            - decision output
+            - analysis_store (read-only)
+            - conversation_summary
+            - user_query
+            
+            PRODUCES:
+            - Natural language explanation
+            - Updates conversation_summary
+            
+            DOES NOT:
+            - Change decisions
+            - Run analysis
+            - Fetch data
+            """
+            print("  ▸ Dialogue Agent (Conversational)")
+            
+            intent = state.get("intent", "")
+            
+            # Run dialogue agent
+            result = dialogue_agent(state)
+            state.update(result)
+
+            # Save explanation output to file
+            try:
+                import os
+                os.makedirs("output", exist_ok=True)
+                decision = state.get('decision', 'N/A')
+                explanation = state.get("explanation", "No explanation")
+                # Handle list content
+                if isinstance(decision, list):
+                    decision = "\n".join(str(item) for item in decision)
+                if isinstance(explanation, list):
+                    explanation = "\n".join(str(item) for item in explanation)
+                with open("output/decision.txt", "w", encoding="utf-8") as f:
+                    f.write("=" * 60 + "\n")
+                    f.write("FINAL OUTPUT\n")
+                    f.write("=" * 60 + "\n")
+                    f.write(f"Decision: {decision}\n\n")
+                    f.write("Explanation:\n")
+                    f.write(str(explanation) + "\n")
+                    f.write("=" * 60 + "\n")
+                print("💾 Saved output to output/decision.txt")
+            except Exception as e:
+                print(f"⚠️ Could not save output: {e}")
+
             # Extract user question + system answer
             user_question = state.get("user_query", "")
-            system_answer = (
-                state.get("explanation")
-                or state.get("decision")
-                or ""
-            )
+            system_answer = state.get("explanation", "")
 
             # ═══════════════════════════════════════════════════════════
-            # UPDATE CONVERSATION SUMMARY (AFTER DECISION EXECUTION)
+            # UPDATE CONVERSATION SUMMARY (AFTER DIALOGUE)
             # ═══════════════════════════════════════════════════════════
-            # Summary rules:
-            # - Keep concise (5-10 lines max)
-            # - Capture: active symbols, horizons, decisions, user intent
-            # - DO NOT include: prices, indicators, timestamps, raw text
-            # - Passed to planner and decision agent ONLY
-            # - NEVER passed to analysis agents
             if user_question and system_answer:
                 state["conversation_summary"] = update_conversation_summary(
                     state=state,
@@ -691,9 +780,6 @@ class SetGraph:
                     llm=self.graph_llm
                 )
                 print(f"    ✓ Conversation summary updated ({len(state['conversation_summary'])} chars)")
-
-            # Clear remaining analyses
-            state["required_analyses"] = []
 
             return state
 
@@ -711,6 +797,7 @@ class SetGraph:
         graph.add_node("pattern_node", run_pattern)
         graph.add_node("trend_node", run_trend)
         graph.add_node("decision_node", run_decision)
+        graph.add_node("dialogue_node", run_dialogue)
 
         graph.add_edge(START, "planner")
         graph.add_edge("planner", "validator")
@@ -725,6 +812,7 @@ class SetGraph:
                 "pattern_node": "pattern_node",
                 "trend_node": "trend_node",
                 "decision_node": "decision_node",
+                "dialogue_node": "dialogue_node",
                 "end": END,
             },
         )
@@ -733,56 +821,6 @@ class SetGraph:
         graph.add_edge("pattern_node", "router")
         graph.add_edge("trend_node", "router")
         graph.add_edge("decision_node", "router")
-
-        return graph.compile()
-
-
-    # ============================================================
-    # LEGACY GRAPH (IndicatorAgentState)
-    # ============================================================
-    def set_graph_legacy(self):
-        """
-        Legacy linear pipeline (kept untouched).
-        """
-
-        agent_nodes = {
-            "indicator": create_indicator_agent(self.graph_llm, self.toolkit),
-            "pattern": create_pattern_agent(
-                self.agent_llm, self.graph_llm, self.toolkit
-            ),
-            "trend": create_trend_agent(
-                self.agent_llm, self.graph_llm, self.toolkit
-            ),
-        }
-
-        decision_agent_node = create_final_trade_decider(self.graph_llm)
-
-        graph = StateGraph(IndicatorAgentState)
-
-        def should_run_analysis(state):
-            return "run_analysis" if state.get("should_analyze", False) else "context_only"
-
-        graph.add_node("router", should_run_analysis)
-
-        for agent_type, node in agent_nodes.items():
-            graph.add_node(f"{agent_type.capitalize()} Agent", node)
-
-        graph.add_node("Decision Maker", decision_agent_node)
-
-        graph.add_edge(START, "router")
-
-        graph.add_conditional_edges(
-            "router",
-            should_run_analysis,
-            {
-                "run_analysis": "Indicator Agent",
-                "context_only": END,
-            },
-        )
-
-        graph.add_edge("Indicator Agent", "Pattern Agent")
-        graph.add_edge("Pattern Agent", "Trend Agent")
-        graph.add_edge("Trend Agent", "Decision Maker")
-        graph.add_edge("Decision Maker", END)
+        graph.add_edge("dialogue_node", END)
 
         return graph.compile()

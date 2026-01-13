@@ -4,7 +4,7 @@ This file DOES NOT modify the graph definition.
 It only imports, builds, runs, and visualizes the graph.
 """
 
-from graph_setup import SetGraph
+from graph_setup_new import SetGraph
 from graph_util import TechnicalTools
 from langchain_openai import ChatOpenAI
 

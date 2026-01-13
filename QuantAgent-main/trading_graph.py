@@ -14,7 +14,7 @@ from langchain_qwq import ChatQwen
 from langgraph.prebuilt import ToolNode
 
 from default_config import DEFAULT_CONFIG
-from graph_setup import SetGraph
+from graph_setup_new import SetGraph
 from graph_util import TechnicalTools
 
 
