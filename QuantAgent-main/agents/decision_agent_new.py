@@ -214,7 +214,17 @@ def generate_decision(state: Dict[str, Any], llm) -> Dict[str, Any]:
             continue
         symbol = parts[0]
         timeframe = parts[1]
-        start_datetime, end_datetime = parts[2].split(":")
+        datetime_range = parts[2]
+        
+        # Parse datetime range with timezone-aware regex
+        import re
+        match = re.match(r'^(.+?[+-]\d{2}:\d{2}):(.+)$', datetime_range)
+        if not match:
+            match = re.match(r'^(.+?Z):(.+)$', datetime_range)
+        if not match:
+            continue
+        start_datetime = match.group(1)
+        end_datetime = match.group(2)
 
         store_key = make_analysis_store_key(
             symbol=symbol,

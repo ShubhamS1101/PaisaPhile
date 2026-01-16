@@ -202,13 +202,24 @@ def get_filtered_analysis_store(state: Dict[str, Any]) -> Dict[str, Dict[str, An
         for ctx_key, spec in analyses_required.items():
             try:
                 # ctx_key: "{symbol}|{timeframe}|{start}:{end}"
+                # Note: datetimes contain colons (e.g., 2026-01-13T10:30:00+05:30)
                 parts = ctx_key.split("|")
                 if len(parts) != 3:
                     continue
                 symbol = parts[0]
                 timeframe = parts[1]
-                start_end = parts[2]
-                start_datetime, end_datetime = start_end.split(":")
+                datetime_range = parts[2]
+                
+                # Parse datetime range with timezone-aware regex
+                import re
+                match = re.match(r'^(.+?[+-]\d{2}:\d{2}):(.+)$', datetime_range)
+                if not match:
+                    match = re.match(r'^(.+?Z):(.+)$', datetime_range)
+                if not match:
+                    continue
+                start_datetime = match.group(1)
+                end_datetime = match.group(2)
+                
                 horizon = spec.get("horizon")
                 if not horizon:
                     continue
@@ -637,11 +648,31 @@ def decision_is_stale(store_key: str, analysis_store: Dict[str, Any]) -> bool:
     """
     Detect whether the cached decision for THIS store_key is stale.
 
-    Algorithm (timestamp-compare, per DataContext+Horizon):
+    Algorithm (timestamp-compare with tolerance, per DataContext+Horizon):
     - If decision missing => stale
     - If any upstream agent output missing => stale
-    - If any upstream agent ran AFTER decision => stale
+    - If any upstream agent ran AFTER decision by MORE than tolerance => stale
+    
+    Tolerance windows by horizon:
+    - intraday: 15 minutes
+    - swing: 6 hours
+    - long_term: 3 days
     """
+    from datetime import timedelta
+    
+    # Tolerance windows
+    DECISION_TOLERANCE = {
+        "intraday": timedelta(minutes=15),
+        "swing": timedelta(hours=6),
+        "long_term": timedelta(days=3)
+    }
+    
+    # Extract horizon from store_key
+    # store_key format: "{symbol}|{timeframe}|{start}:{end}|{horizon}"
+    parts = store_key.split("|")
+    horizon = parts[4] if len(parts) > 4 else "intraday"
+    tolerance = DECISION_TOLERANCE.get(horizon, timedelta(minutes=15))
+    
     entry = analysis_store.get(store_key, {})
     decision = entry.get("decision")
     if not isinstance(decision, dict):
@@ -663,7 +694,9 @@ def decision_is_stale(store_key: str, analysis_store: Dict[str, Any]) -> bool:
     for agent in ["indicator", "pattern", "trend"]:
         upstream = entry.get(agent)
         if not isinstance(upstream, dict):
-            return True
+            # Upstream missing - but don't mark stale if decision exists
+            # Decision can exist even if some upstreams haven't run yet
+            continue
 
         upstream_time = (
             upstream.get("created_at")
@@ -671,14 +704,17 @@ def decision_is_stale(store_key: str, analysis_store: Dict[str, Any]) -> bool:
             or (upstream.get("metadata") or {}).get("created_at")
         )
         if not upstream_time:
-            return True
+            continue
 
         try:
             upstream_dt = parse_iso_datetime(upstream_time)
         except Exception:
-            return True
+            continue
 
-        if upstream_dt > decision_dt:
+        # Check if upstream is newer by MORE than tolerance
+        time_diff = upstream_dt - decision_dt
+        if time_diff > tolerance:
+            print(f"  ⚠️  Decision stale: {agent}.ran_at > decision.ran_at by {time_diff} (tolerance: {tolerance})")
             return True
 
     return False

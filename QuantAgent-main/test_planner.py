@@ -6,7 +6,7 @@ Asks for a user query and prints the planner output JSON.
 import json
 
 from trading_graph import TradingGraph
-from planner_agent import create_planner_agent
+from agents.planner_agent import create_planner_agent
 
 # ==========================================================
 # CONFIG

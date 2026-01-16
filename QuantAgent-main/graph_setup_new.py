@@ -10,14 +10,14 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 
 from agent_state import DataContext, TradingAdvisorState
-from conversation_memory import update_conversation_summary
-from decision_agent_new import create_decision_agent
-from dialogue_agent import create_dialogue_agent
+from agents.conversation_memory import update_conversation_summary
+from agents.decision_agent_new import create_decision_agent
+from agents.dialogue_agent import create_dialogue_agent
 from graph_util import TechnicalTools
-from indicator_agent_new import create_indicator_agent
-from pattern_agent_new import create_pattern_agent
-from planner_agent import create_planner_agent, validate_and_route
-from trend_agent_new import create_trend_agent
+from agents.indicator_agent_new import create_indicator_agent
+from agents.pattern_agent_new import create_pattern_agent
+from agents.planner_agent import create_planner_agent, validate_and_route
+from agents.trend_agent_new import create_trend_agent
 
 
 def _ensure_state_defaults(state: Dict[str, Any]) -> Dict[str, Any]:

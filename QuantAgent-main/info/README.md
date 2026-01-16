@@ -69,81 +69,39 @@ A sophisticated **multi-agent conversational trading analysis system** that comb
 
 ## 🚀 Features
 
-### 🎯 **Core System**
-
-- **Conversational Interface** - Multi-turn conversations with full context retention
-- **Persistent Analysis Store** - Cached results across queries for speed
-- **Automatic Freshness Tracking** - Each agent tracks `ran_at` timestamps
-- **Intelligent Staleness Detection** - Decision agent auto-reruns when upstream data changes
-- **Graceful Error Handling** - Handles failed data fetches with clear error messages
-- **Dual Context System** - Separate data contexts for analysis vs. dialogue
-
-### 🤖 **Specialized Agents**
-
-#### 1. **Planner Agent**
-- Interprets user intent (`trade`, `trend`, `compare`, `explain`, `price_check`)
-- Determines required analyses and data contexts
-- Enforces Yahoo Finance API limits (1m: 4 days, 5m: 30 days, 15m: 60 days)
-- Computes datetime ranges with timezone awareness
-
-#### 2. **Validator**
-- Pure Python safety gate (no LLM)
-- Validates completeness (symbol, timeframe, datetime ranges)
-- Ensures horizon consistency across contexts
-- Enforces fair comparisons (same timeframe for all assets)
-- Blocks execution on incomplete information
-
-#### 3. **Indicator Agent**
-- Computes RSI, MACD, Stochastic Oscillator, Bollinger Bands
-- Freshness check: 1 candle tolerance
-- Updates only indicator field in analysis_store
+<!-- - **Multi-Agent Analysis**: Four specialized agents working together: -->
+  
+  ### Indicator Agent
+  
+  • Computes five technical indicators—including RSI to assess momentum extremes, MACD to quantify convergence–divergence dynamics, and the Stochastic Oscillator to measure closing prices against recent trading ranges—on each incoming K‑line, converting raw OHLC data into precise, signal-ready metrics.
 
   ![indicator agent](assets/indicator.png)
   
-#### 4. **Pattern Agent**
-- Identifies 13+ chart patterns (head & shoulders, triangles, flags, etc.)
-- Uses vision-capable LLM to analyze generated charts
-- Freshness check: 2-3 candles tolerance
-- Updates only pattern field in analysis_store
+ ### Pattern Agent
+  
+  • Upon a pattern query, the Pattern Agent first uses the agent draws the recent price chart, spots its main highs, lows, and general up‑or‑down moves, compares that shape to a set of familiar patterns, and returns a short, plain‑language description of the best match.
   
   ![indicator agent](assets/pattern.png)
   
-#### 5. **Trend Agent**
-- Fits trend channels (support/resistance lines)
-- Analyzes slope, consolidation zones, breakouts
-- Freshness check: % of analysis window
-- Updates only trend field in analysis_store
+  ### Trend Agent
+  
+  • Leverages tool-generated annotated K‑line charts overlaid with fitted trend channels—upper and lower boundary lines tracing recent highs and lows—to quantify market direction, channel slope, and consolidation zones, then delivers a concise, professional summary of the prevailing trend.
   
   ![trend agent](assets/trend.png)
 
-#### 6. **Decision Agent**
-- Synthesizes indicator + pattern + trend outputs
-- Non-conversational, produces structured JSON only
-- **Automatic staleness detection** - reruns if upstream agents updated
-- Tolerance: 15min (intraday), 6h (swing), 3d (long_term)
+  ### Decision Agent
+  
+  • Synthesizes outputs from the Indicator, Pattern, Trend, and Risk agents—including momentum metrics, detected chart formations, channel analysis, and risk–reward assessments—to formulate actionable trade directives, clearly specifying LONG or SHORT positions, recommended entry and exit points, stop‑loss thresholds, and concise rationale grounded in each agent’s findings.
   
   ![alt text](assets/decision.png)
 
-#### 7. **Dialogue Agent**
-- **Unified conversational prompt** - adapts to any query type
-- Reads analysis_store + data_contexts_required
-- Never changes decisions or runs analysis
-- Provides graceful error messages for failed fetches
-
-### 🌐 **Interfaces**
-
-#### **Web Interface** (Flask)
-- Real-time market data from Yahoo Finance
-- Interactive asset selection (stocks, crypto, commodities, indices)
-- Multiple timeframe analysis (1m, 5m, 15m, 1h, 1d)
-- API key management
-- Dynamic chart generation
-
-#### **CLI Interface** (`test_interactive.py`)
-- Multi-turn conversational loop
-- Persistent state across queries
-- Auto-cleanup on exit (clears `output/charts/`, `debug_output/`)
-- Debug mode with state inspection
+### Web Interface
+Modern Flask-based web application with:
+  - Real-time market data from Yahoo Finance
+  - Interactive asset selection (stocks, crypto, commodities, indices)
+  - Multiple timeframe analysis (1m to 1d)
+  - Dynamic chart generation
+  - API key management
 
 ## 📦 Installation
 

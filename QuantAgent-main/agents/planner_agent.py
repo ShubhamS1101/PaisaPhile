@@ -28,6 +28,33 @@ You do NOT fetch data.
 You do NOT make predictions.
 You ONLY PLAN.
 
+When planning market data requests, the planner MUST follow these exact rules based on timeframe:
+
+1-minute timeframe (1m):
+• Maximum lookback allowed: last 4 calendar days only
+• Requests older than 4 days are INVALID
+• Use rolling windows only (never fixed session times)
+
+5-minute timeframe (5m):
+• Maximum lookback allowed: last 30 calendar days
+• End time MUST be at least 10 minutes before current time
+
+15-minute timeframe (15m):
+• Maximum lookback allowed: last 60 calendar days
+• End time MUST be at least 30 minutes before current time
+
+1-day timeframe (1d):
+• No intraday restriction
+• Historical full-range requests are allowed
+
+General rules (non-negotiable):
+• NEVER request the full current trading session (e.g., 09:15–15:30 today)
+• ALWAYS use rolling lookback windows (last N candles or days)
+• “Live”, “current”, or “now” means latest completed candle only
+• If a request violates Yahoo limits, automatically re-plan with a valid timeframe
+• NEVER label symbols as delisted due to intraday data gaps
+
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ABSOLUTE OUTPUT RULES (NON-NEGOTIABLE)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -420,6 +447,54 @@ CURRENT_TIME: {current_time} IST
         
         # NEW: Extract analyses_required (dict mapping context key → analysis spec)
         analyses_required = planner_output.get("analyses_required", {})
+        
+        # CRITICAL FIX: Ensure keys in analyses_required match data_contexts_required format
+        # LLM may provide shortened keys - we must reconstruct full context keys
+        if analyses_required and data_contexts_required:
+            fixed_analyses_required = {}
+            
+            # Build lookup tables
+            symbol_to_full_key = {}
+            symbol_timeframe_to_full_key = {}
+            
+            for ctx in data_contexts_required:
+                full_key = ctx.get("key", "")
+                symbol = ctx.get("symbol", "")
+                timeframe = ctx.get("timeframe", "")
+                
+                if not full_key or not symbol:
+                    continue
+                
+                # Map symbol -> full key
+                symbol_to_full_key[symbol] = full_key
+                
+                # Map symbol|timeframe -> full key
+                if timeframe:
+                    short_key = f"{symbol}|{timeframe}"
+                    symbol_timeframe_to_full_key[short_key] = full_key
+            
+            # Fix analyses_required keys
+            for key, spec in analyses_required.items():
+                matched_key = None
+                
+                # Try exact match first
+                if key in [ctx.get("key") for ctx in data_contexts_required]:
+                    matched_key = key
+                # Try symbol|timeframe match
+                elif key in symbol_timeframe_to_full_key:
+                    matched_key = symbol_timeframe_to_full_key[key]
+                # Try symbol-only match
+                elif key in symbol_to_full_key:
+                    matched_key = symbol_to_full_key[key]
+                else:
+                    # Key format not recognized - skip it
+                    print(f"⚠️  Planner provided invalid key format: {key} (skipping)")
+                    continue
+                
+                fixed_analyses_required[matched_key] = spec
+            
+            analyses_required = fixed_analyses_required
+        
         # Enforce: dialogue is NOT a per-context analysis
         if isinstance(analyses_required, dict):
             for _, spec in analyses_required.items():
@@ -455,7 +530,9 @@ CURRENT_TIME: {current_time} IST
             print(f"  - {ctx.get('key', 'N/A')}")
         print(f"Analyses Required   : {len(analyses_required)} context mappings")
         for key, spec in analyses_required.items():
-            print(f"  - {key}: {spec}")
+            # Show full key to verify format
+            print(f"  - {key}")
+            print(f"    → {spec}")
         print(f"Clarification       : {updated_state['need_clarification']}")
         if updated_state.get("explanation"):
             print(f"Message             : {updated_state['explanation']}")
@@ -570,20 +647,34 @@ def system_validator(state: Dict[str, Any]) -> ValidationResult:
         )
     
     # ========================================================================
-    # RULE 1: MANDATORY - Validate data_contexts_required completeness
-    # Every DataContext must have all required fields
+    # RULE 1: MANDATORY - Validate analyses_required completeness
+    # These intents require at least one analysis context
     # ========================================================================
     
-    if intent in ["trade", "trend", "compare", "price_check"]:
-        # These intents require data contexts
+    if intent in ["trade", "trend", "compare"]:
+        # These intents require analyses_required (contexts to analyze)
+        # data_contexts_required is OPTIONAL (for dialogue raw data only)
+        if not analyses_required:
+            return ValidationResult(
+                approved=False,
+                reason="Missing analysis contexts for analysis intent",
+                clarification="Which asset would you like to analyze? Please provide the ticker symbol (e.g., AAPL for Apple, BTC-USD for Bitcoin)."
+            )
+    
+    # ========================================================================
+    # RULE 1.5: For price_check - only validate data_contexts_required
+    # ========================================================================
+    
+    if intent == "price_check":
+        # Price check only needs data contexts, no analysis required
         if not data_contexts_required:
             return ValidationResult(
                 approved=False,
-                reason="Missing data contexts for analysis intent",
-                clarification="Which asset would you like to analyze? Please provide the ticker symbol (e.g., AAPL for Apple, BTC-USD for Bitcoin)."
+                reason="Missing data contexts for price check",
+                clarification="Which asset would you like to check the price for? Please provide the ticker symbol (e.g., AAPL, BTC-USD)."
             )
         
-        # Validate each data context
+        # Validate each data context completeness
         for ctx in data_contexts_required:
             missing_fields = []
             
@@ -603,13 +694,45 @@ def system_validator(state: Dict[str, Any]) -> ValidationResult:
                     clarification=f"I need complete information for {ctx.get('symbol', 'the asset')}. Missing: {', '.join(missing_fields)}."
                 )
         
-        # Validate analyses_required has entries for each data context
+        # Price check is valid if we have data contexts
+        return ValidationResult(approved=True, reason="Valid price check query")
+    
+    # ========================================================================
+    # RULE 2: Validate data_contexts_required for analysis intents
+    # ========================================================================
+    
+    if intent in ["trade", "trend", "compare"]:
         for ctx in data_contexts_required:
-            ctx_key = ctx.get("key")
-            if ctx_key not in analyses_required:
+            missing_fields = []
+            
+            if not ctx.get("symbol"):
+                missing_fields.append("symbol")
+            if not ctx.get("timeframe"):
+                missing_fields.append("timeframe")
+            if not ctx.get("start_datetime"):
+                missing_fields.append("start_datetime")
+            if not ctx.get("end_datetime"):
+                missing_fields.append("end_datetime")
+            
+            if missing_fields:
                 return ValidationResult(
                     approved=False,
-                    reason=f"No analysis specification for context {ctx_key}",
+                    reason=f"Incomplete DataContext: missing {', '.join(missing_fields)}",
+                    clarification=f"I need complete information for {ctx.get('symbol', 'the asset')}. Missing: {', '.join(missing_fields)}."
+                )
+        
+        # Validate analyses_required has entries and proper structure
+        for ctx_key, spec in analyses_required.items():
+            if not spec.get("horizon"):
+                return ValidationResult(
+                    approved=False,
+                    reason=f"Missing horizon in analyses_required for {ctx_key}",
+                    clarification="Internal error: missing analysis specification. Please rephrase your query."
+                )
+            if not spec.get("run") or not isinstance(spec.get("run"), list):
+                return ValidationResult(
+                    approved=False,
+                    reason=f"Missing or invalid 'run' list for {ctx_key}",
                     clarification="Internal error: missing analysis specification. Please rephrase your query."
                 )
     

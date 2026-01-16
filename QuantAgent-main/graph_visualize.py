@@ -4,37 +4,17 @@ This file DOES NOT modify the graph definition.
 It only imports, builds, runs, and visualizes the graph.
 """
 
-from graph_setup_new import SetGraph
-from graph_util import TechnicalTools
-from langchain_openai import ChatOpenAI
-
-
-# ==========================================================
-# LLM SETUP
-# ==========================================================
-agent_llm = ChatOpenAI(
-    model="gemini-2.5-flash",
-    temperature=0.1,
-)
-
-graph_llm = ChatOpenAI(
-    model="gemini-2.5-flash",
-    temperature=0.1,
-)
-
-toolkit = TechnicalTools()
+from graph_main import create_trading_graph
+from default_config import DEFAULT_CONFIG
 
 
 # ==========================================================
 # BUILD GRAPH (NO MODIFICATIONS)
 # ==========================================================
-graph_builder = SetGraph(
-    agent_llm=agent_llm,
-    graph_llm=graph_llm,
-    toolkit=toolkit,
-)
+# Use production graph from graph_main.py
+config = DEFAULT_CONFIG.copy()
 
-graph = graph_builder.set_graph()
+graph = create_trading_graph(config)
 
 
 # ==========================================================
