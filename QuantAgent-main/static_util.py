@@ -1,5 +1,6 @@
 import base64
 import io
+import os
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -20,21 +21,21 @@ matplotlib.use("Agg")
 
 def generate_kline_image(kline_data) -> dict:
     """
-    Generate a candlestick (K-line) chart from OHLCV data, save it locally, and return a base64-encoded image.
+    Generate a candlestick (K-line) chart from OHLCV data and return a base64-encoded image.
 
     Args:
         kline_data (dict): Dictionary with keys including 'Datetime', 'Open', 'High', 'Low', 'Close'.
-        filename (str): Name of the file to save the image locally (default: 'kline_chart.png').
 
     Returns:
-        dict: Dictionary containing base64-encoded image string and local file path.
+        dict: Dictionary containing base64-encoded image string.
     """
 
     df = pd.DataFrame(kline_data)
     # take recent 40
     df = df.tail(40)
 
-    df.to_csv("record.csv", index=False, date_format="%Y-%m-%d %H:%M:%S")
+    os.makedirs("data", exist_ok=True)
+    df.to_csv("data/record.csv", index=False, date_format="%Y-%m-%d %H:%M:%S")
     try:
         # df.index = pd.to_datetime(df["Datetime"])
         df.index = pd.to_datetime(df["Datetime"], format="%Y-%m-%d %H:%M:%S")
@@ -54,14 +55,7 @@ def generate_kline_image(kline_data) -> dict:
     axlist[0].set_ylabel("Price", fontweight="normal")
     axlist[0].set_xlabel("Datetime", fontweight="normal")
 
-    fig.savefig(
-        fname="kline_chart.png",
-        dpi=600,
-        bbox_inches="tight",
-        pad_inches=0.1,
-    )
-    plt.close(fig)
-    # ---------- Encode to base64 -----------------
+    # ---------- Encode to base64 (no local file saving) -----------------
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=600, bbox_inches="tight", pad_inches=0.1)
     plt.close(fig)  # release memory
@@ -141,16 +135,10 @@ def generate_trend_image(kline_data) -> dict:
     axlist[0].set_ylabel("Price", fontweight="normal")
     axlist[0].set_xlabel("Datetime", fontweight="normal")
 
-    # save fig locally
-    fig.savefig(
-        "trend_graph.png", format="png", dpi=600, bbox_inches="tight", pad_inches=0.1
-    )
-    plt.close(fig)
-
     # Add legend manually
     axlist[0].legend(loc="upper left")
 
-    # Save to base64
+    # Encode to base64 (no local file saving)
     buf = io.BytesIO()
     fig.savefig(buf, format="png")
     buf.seek(0)

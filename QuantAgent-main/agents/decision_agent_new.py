@@ -57,24 +57,29 @@ DECISION SYNTHESIS RULES
 Your task is to synthesize the analysis above into ONE decision.
 
 DECISION CRITERIA:
-✓ BUY: All three analyses (indicator, pattern, trend) show strong bullish confluence
-  - Momentum indicators confirm uptrend
-  - Patterns show clear breakout
-  - Trend support is strong
-  - Confidence ≥ 70%
+✓ BUY: Available analyses show bullish confluence
+  - If indicator: Momentum confirms uptrend
+  - If pattern: Charts show breakout
+  - If trend: Support is strong
+  - More analyses = higher confidence
+  - Strong BUY: confidence ≥ 70%
 
-✓ SELL: All three analyses show strong bearish confluence
-  - Momentum indicators confirm downtrend
-  - Patterns show clear breakdown
-  - Trend resistance is strong
-  - Confidence ≥ 70%
+✓ SELL: Available analyses show bearish confluence
+  - If indicator: Momentum confirms downtrend
+  - If pattern: Charts show breakdown
+  - If trend: Resistance is strong
+  - More analyses = higher confidence
+  - Strong SELL: confidence ≥ 70%
 
 ✓ HOLD: Default when:
   - Signals conflict or are mixed
-  - Indicators are neutral
+  - Available analyses are neutral
   - Patterns incomplete or ambiguous
   - Confidence < 70%
   - Insufficient data
+
+NOTE: Decision can be made with ANY available analysis (indicator, pattern, or trend).
+More analyses available = higher confidence possible.
 
 SAFETY RULES:
 - Prefer HOLD when uncertain
@@ -94,9 +99,10 @@ OUTPUT FORMAT (STRICT JSON ONLY)
     "{{symbol}}|{{timeframe}}|{{start}}:{{end}}"
   ],
   "reasoning": {{
-    "indicator": "<1-2 sentence summary of indicator signals>",
-    "pattern": "<1-2 sentence summary of pattern signals>",
-    "trend": "<1-2 sentence summary of trend signals>"
+    "indicator": "<1-2 sentence summary if available, or 'Not analyzed'>",
+    "pattern": "<1-2 sentence summary if available, or 'Not analyzed'>",
+    "trend": "<1-2 sentence summary if available, or 'Not analyzed'>",
+    "data_completeness": "<which analyses were used: e.g., 'Based on trend only' or 'Full analysis'>"
   }},
   "risk_notes": "<specific risks for this decision>"
 }}
@@ -236,21 +242,49 @@ def generate_decision(state: Dict[str, Any], llm) -> Dict[str, Any]:
 
         planner_requested = "decision" in spec.get("run", [])
         stale = decision_is_stale(store_key, analysis_store)
-        if not planner_requested and not stale:
-            continue
-
-        # Guard: need upstream analyses present
+        
+        # Get entry and check what analyses are available
         entry = analysis_store.get(store_key) or {}
+        available_analyses = [agent for agent in ["indicator", "pattern", "trend"] 
+                            if isinstance(entry.get(agent), dict) and entry.get(agent).get("result")]
         
-        # Check if upstream analyses exist
-        missing_upstream = [a for a in ["indicator", "pattern", "trend"] if not isinstance(entry.get(a), dict)]
-        if missing_upstream:
-            # Don't force decision before inputs exist
-            if planner_requested and "decision" in spec.get("run", []):
-                spec["run"].remove("decision")
+        print(f"🔄 Checking decision for {store_key}")
+        print(f"   Planner requested: {planner_requested}")
+        print(f"   Decision stale: {stale}")
+        print(f"   Available analyses: {available_analyses}")
+        
+        # Decision logic:
+        # 1. If planner assigned decision → run with whatever data available
+        # 2. If decision exists but stale AND any upstream analysis exists → rerun
+        # 3. If no analyses available at all → skip
+        
+        if not available_analyses:
+            print(f"   ⚠️ No upstream analyses available - cannot make decision")
+            if not planner_requested:
+                continue
+            # If planner explicitly requested but no data, we'll try anyway and let LLM handle it
+        
+        # Check if any upstream analysis just ran (has fresh ran_at)
+        upstream_just_ran = False
+        for agent in available_analyses:
+            agent_data = entry.get(agent, {})
+            if agent_data.get("metadata", {}).get("ran_at"):
+                # If ran_at exists and decision is stale, upstream likely just updated
+                upstream_just_ran = True
+                break
+        
+        # Decide whether to run
+        should_run = (
+            planner_requested or  # Explicitly assigned
+            (stale and available_analyses) or  # Stale with data available
+            (upstream_just_ran and available_analyses)  # New upstream data
+        )
+        
+        if not should_run:
+            print(f"   ⏭️  Skipping decision (fresh and not requested)")
             continue
         
-        print(f"🔄 Running decision for {store_key} (stale={stale}, planner_requested={planner_requested})")
+        print(f"   ▶️  Running decision with available data: {available_analyses}")
 
         formatted = _format_single_context_analysis(entry)
         
@@ -346,32 +380,29 @@ def _format_single_context_analysis(entry: Dict[str, Any]) -> Dict[str, Any]:
     # Indicator analysis
     if "indicator" in entry and entry["indicator"]:
         indicator_output = entry["indicator"]
-        if "data" in indicator_output:
-            indicator_data = indicator_output["data"]
-            interpretation = indicator_data.get("interpretation", "Not available")
-            analysis_parts.append("📊 INDICATOR ANALYSIS:")
-            analysis_parts.append(interpretation)
-            analysis_parts.append("")
+        indicator_data = indicator_output.get("result", {})
+        interpretation = indicator_data.get("interpretation", "Not available")
+        analysis_parts.append("📊 INDICATOR ANALYSIS:")
+        analysis_parts.append(interpretation)
+        analysis_parts.append("")
     
     # Pattern analysis
     if "pattern" in entry and entry["pattern"]:
         pattern_output = entry["pattern"]
-        if "data" in pattern_output:
-            pattern_data = pattern_output["data"]
-            interpretation = pattern_data.get("interpretation", "Not available")
-            analysis_parts.append("📈 PATTERN ANALYSIS:")
-            analysis_parts.append(interpretation)
-            analysis_parts.append("")
+        pattern_data = pattern_output.get("result", {})
+        interpretation = pattern_data.get("interpretation", "Not available")
+        analysis_parts.append("📈 PATTERN ANALYSIS:")
+        analysis_parts.append(interpretation)
+        analysis_parts.append("")
     
     # Trend analysis
     if "trend" in entry and entry["trend"]:
         trend_output = entry["trend"]
-        if "data" in trend_output:
-            trend_data = trend_output["data"]
-            interpretation = trend_data.get("interpretation", "Not available")
-            analysis_parts.append("📉 TREND ANALYSIS:")
-            analysis_parts.append(interpretation)
-            analysis_parts.append("")
+        trend_data = trend_output.get("result", {})
+        interpretation = trend_data.get("interpretation", "Not available")
+        analysis_parts.append("📉 TREND ANALYSIS:")
+        analysis_parts.append(interpretation)
+        analysis_parts.append("")
     
     return {
         "analysis_summary": "\n".join(analysis_parts) if analysis_parts else "No analysis available"

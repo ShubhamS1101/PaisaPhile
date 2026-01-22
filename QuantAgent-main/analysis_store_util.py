@@ -199,6 +199,10 @@ def get_filtered_analysis_store(state: Dict[str, Any]) -> Dict[str, Dict[str, An
     analyses_required = state.get("analyses_required", {})
     if analyses_required:
         filtered: Dict[str, Dict[str, Any]] = {}
+        print(f"\n🔍 Filtering analysis_store:")
+        print(f"   analyses_required keys: {list(analyses_required.keys())}")
+        print(f"   analysis_store keys: {list(analysis_store.keys())}")
+        
         for ctx_key, spec in analyses_required.items():
             try:
                 # ctx_key: "{symbol}|{timeframe}|{start}:{end}"
@@ -230,10 +234,17 @@ def get_filtered_analysis_store(state: Dict[str, Any]) -> Dict[str, Dict[str, An
                     end_datetime=end_datetime,
                     horizon=horizon,
                 )
+                print(f"   Constructed store_key: {store_key}")
                 if store_key in analysis_store:
                     filtered[store_key] = analysis_store[store_key]
-            except Exception:
+                    print(f"   ✅ Found in analysis_store")
+                else:
+                    print(f"   ❌ Not found in analysis_store")
+            except Exception as e:
+                print(f"   ⚠️ Error processing ctx_key {ctx_key}: {e}")
                 continue
+        
+        print(f"   Filtered store has {len(filtered)} entries\n")
         return filtered
 
     # LEGACY ARCH: filter using required_analysis_keys if present

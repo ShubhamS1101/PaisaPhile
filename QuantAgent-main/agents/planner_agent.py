@@ -120,6 +120,72 @@ OUTPUT JSON SCHEMA (STRICT)
 }
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CRITICAL RULE FOR analyses_required:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The keys in analyses_required MUST be actual data context keys in format:
+"<symbol>|<timeframe>|<start_datetime>:<end_datetime>"
+
+NEVER use placeholder keys like "INTENT_ANALYSIS" or "ANALYSIS_1".
+Each key must be a fully formed context key that the system can parse.
+
+For trade/trend/compare intents that need analysis:
+1. Determine symbol, timeframe, and datetime range
+2. Form the context key: "AAPL|5m|2026-01-20T09:15:00+05:30:2026-01-20T15:30:00+05:30"
+3. Use that EXACT key in analyses_required
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EXAMPLES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Example 1: Trade query with full analysis
+Query: "Should I buy BEL.NS for intraday?"
+CURRENT_DATETIME: "2026-01-20T14:30:00+05:30"
+
+{
+  "intent": "trade",
+  "need_clarification": false,
+  "data_contexts_required": [],
+  "analyses_required": {
+    "BEL.NS|5m|2026-01-20T09:15:00+05:30:2026-01-20T14:30:00+05:30": {
+      "horizon": "intraday",
+      "run": ["indicator", "pattern", "trend", "decision"]
+    }
+  },
+  "clarification_question": null
+}
+
+Example 2: Price check query
+Query: "What's the current price of AAPL?"
+CURRENT_DATETIME: "2026-01-20T14:30:00+05:30"
+
+{
+  "intent": "price_check",
+  "need_clarification": false,
+  "data_contexts_required": [
+    {
+      "key": "AAPL|1d|2026-01-19T09:30:00+05:30:2026-01-20T14:30:00+05:30",
+      "symbol": "AAPL",
+      "timeframe": "1d",
+      "start_datetime": "2026-01-19T09:30:00+05:30",
+      "end_datetime": "2026-01-20T14:30:00+05:30"
+    }
+  ],
+  "analyses_required": {},
+  "clarification_question": null
+}
+
+Example 3: General greeting
+Query: "hi"
+
+{
+  "intent": "clarify",
+  "need_clarification": true,
+  "data_contexts_required": [],
+  "analyses_required": {},
+  "clarification_question": "Hello! How can I assist you with your trading today? You can ask me about buy/sell recommendations, market trends, price checks, or explanations of technical indicators."
+}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 INTENT DEFINITIONS (MANDATORY)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 intent MUST be one of:

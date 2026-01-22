@@ -17,7 +17,15 @@ Architecture:
 6. Memory → updates conversation summary
 """
 
-from typing import Dict, Any
+from typing import Any, Dict, List
+import re
+import os
+
+from langchain_anthropic import ChatAnthropic
+from langchain_core.language_models import BaseChatModel
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
+from langchain_qwq import ChatQwen
 from langgraph.graph import StateGraph, START, END
 
 from agent_state import TradingAdvisorState
@@ -40,15 +48,25 @@ class TradingGraphV2:
     Production trading graph with proper freshness tracking and dual context handling.
     """
     
-    def __init__(self, config: Dict[str, Any], agent_llm, graph_llm, toolkit):
+    def __init__(self, config: Dict[str, Any], agent_llm, graph_llm, conversation_summary_llm, toolkit):
         self.config = config
         self.agent_llm = agent_llm
         self.graph_llm = graph_llm
+        self.conversation_summary_llm = conversation_summary_llm
         self.toolkit = toolkit
     
     def _normalize_node(self):
-        """Initialize state defaults."""
+        """Initialize state defaults and flush temporary files."""
         def node(state: TradingAdvisorState) -> Dict[str, Any]:
+            # Flush record.csv at the start of each query
+            import os
+            record_path = "data/record.csv"
+            if os.path.exists(record_path):
+                try:
+                    os.remove(record_path)
+                except Exception:
+                    pass  # Ignore errors if file is in use
+            
             state.setdefault("kline_data", {})
             state.setdefault("analysis_store", {})
             state.setdefault("data_contexts_required", [])
@@ -89,6 +107,9 @@ class TradingGraphV2:
             print(f"\n{'='*60}")
             print(f"FETCHING DATA")
             print(f"{'='*60}")
+            print(f"📋 Contexts to fetch: {len(all_contexts_to_fetch)}")
+            for ctx in all_contexts_to_fetch:
+                print(f"   - {ctx}")
             
             for context_key in all_contexts_to_fetch:
                 # Parse context_key: "{symbol}|{timeframe}|{start}:{end}"
@@ -96,11 +117,15 @@ class TradingGraphV2:
                 parts = context_key.split("|")
                 if len(parts) != 3:
                     print(f"  ⚠️ Invalid context_key format: {context_key}")
+                    print(f"     Expected 3 parts, got {len(parts)}")
                     continue
                 
                 symbol = parts[0]
                 timeframe = parts[1]
                 datetime_range = parts[2]
+                
+                print(f"  Parsing: {symbol} | {timeframe}")
+                print(f"  Datetime range: {datetime_range}")
                 
                 # Parse datetime range: "start_iso:end_iso"
                 # ISO datetimes can end with timezone like +05:30 or -08:00 or Z
@@ -109,17 +134,24 @@ class TradingGraphV2:
                 try:
                     import re
                     # Match pattern: (ISO_datetime_with_tz):(ISO_datetime_with_tz)
-                    # Timezone patterns: +XX:XX or -XX:XX or Z
-                    # After timezone, there's a colon separator, then next datetime starts
+                    # The separator colon comes AFTER a complete timezone (+XX:XX or -XX:XX or Z)
+                    # Look for pattern: ...+XX:XX: or ...-XX:XX: (note the extra colon after timezone)
                     
-                    # Try timezone with +XX:XX or -XX:XX format
-                    match = re.match(r'^(.+?[+-]\d{2}:\d{2}):(.+)$', datetime_range)
+                    # Try timezone with +XX:XX or -XX:XX format followed by colon separator
+                    match = re.match(r'^(.+?[+-]\d{2}:\d{2}):(.+?[+-]\d{2}:\d{2})$', datetime_range)
                     if not match:
                         # Try Z timezone
-                        match = re.match(r'^(.+?Z):(.+)$', datetime_range)
+                        match = re.match(r'^(.+?Z):(.+?Z)$', datetime_range)
+                    if not match:
+                        # Try mixed: first has +XX:XX, second has Z
+                        match = re.match(r'^(.+?[+-]\d{2}:\d{2}):(.+?Z)$', datetime_range)
+                    if not match:
+                        # Try mixed: first has Z, second has +XX:XX
+                        match = re.match(r'^(.+?Z):(.+?[+-]\d{2}:\d{2})$', datetime_range)
                     
                     if not match:
                         print(f"  ⚠️ Could not parse datetime range: {datetime_range}")
+                        print(f"     Expected format: YYYY-MM-DDTHH:MM:SS+TZ:TZ:YYYY-MM-DDTHH:MM:SS+TZ:TZ")
                         continue
                     
                     start_datetime = match.group(1)
@@ -257,7 +289,7 @@ class TradingGraphV2:
                 state,  # Pass full state (contains conversation_summary, user_preferences)
                 state.get("user_query") or "",
                 state.get("explanation") or "",
-                self.agent_llm  # Pass LLM for summary rewriting
+                self.conversation_summary_llm  # Pass conversation summary LLM
             )
             return {"conversation_summary": summary}
         
@@ -328,10 +360,24 @@ class TradingGraphV2:
             return "end"
         
         def route_after_validate(state: Dict[str, Any]) -> str:
-            if state.get("intent") == "clarify" and state.get("explanation"):
+            intent = state.get("intent")
+            has_explanation = state.get("explanation")
+            analyses_required = state.get("analyses_required", {})
+            
+            print(f"\n🔀 ROUTING AFTER VALIDATE:")
+            print(f"   Intent: {intent}")
+            print(f"   Has explanation: {bool(has_explanation)}")
+            print(f"   Analyses required: {len(analyses_required)} contexts")
+            
+            if intent == "clarify" and has_explanation:
+                print(f"   → Routing to DIALOGUE (clarification needed)")
                 return "dialogue"
-            if state.get("analyses_required"):
+            
+            if analyses_required:
+                print(f"   → Routing to FETCH (will fetch {len(analyses_required)} contexts)")
                 return "fetch"
+            
+            print(f"   → Routing to DIALOGUE (no analyses required)")
             return "dialogue"
         
         def route_after_fetch(state: Dict[str, Any]) -> str:
@@ -384,16 +430,91 @@ class TradingGraphV2:
         return graph.compile()
 
 
-def create_trading_graph(config: Dict[str, Any]) -> Any:
-    """Factory function to create the trading graph."""
-    from trading_graph import TradingGraph
+def _get_api_key(config: Dict[str, Any], provider: str = "openai", use_conversation_api_key: bool = False) -> str:
+    """Get API key with proper validation and error handling."""
+    if provider == "openai":
+        if use_conversation_api_key:
+            api_key = config.get("conversation_summary_api_key") or config.get("api_key")
+        else:
+            api_key = config.get("api_key")
+        if not api_key:
+            api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key or api_key == "your-openai-api-key-here" or api_key == "":
+            raise ValueError("OpenAI API key not found or invalid")
+    elif provider == "anthropic":
+        api_key = config.get("anthropic_api_key")
+        if not api_key:
+            api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key or api_key == "":
+            raise ValueError("Anthropic API key not found")
+    elif provider == "qwen":
+        api_key = config.get("qwen_api_key")
+        if not api_key:
+            api_key = os.environ.get("DASHSCOPE_API_KEY")
+        if not api_key or api_key == "":
+            raise ValueError("Qwen API key not found")
+    elif provider == "gemini":
+        api_key = config.get("gemini_api_key")
+        if not api_key:
+            api_key = os.environ.get("GOOGLE_API_KEY")
+        if not api_key or api_key == "":
+            raise ValueError("Gemini API key not found")
+    else:
+        raise ValueError(f"Unsupported provider: {provider}")
+    return api_key
+
+
+def _create_llm(config: Dict[str, Any], provider: str, model: str, temperature: float, use_conversation_api_key: bool = False) -> BaseChatModel:
+    """Create an LLM instance based on the provider."""
+    api_key = _get_api_key(config, provider, use_conversation_api_key)
     
-    # Use existing TradingGraph for LLM initialization
-    temp_graph = TradingGraph(config=config)
+    if provider == "openai":
+        return ChatOpenAI(model=model, temperature=temperature, api_key=api_key)
+    elif provider == "anthropic":
+        return ChatAnthropic(model=model, temperature=temperature, api_key=api_key)
+    elif provider == "qwen":
+        return ChatQwen(model=model, temperature=temperature, api_key=api_key, max_retries=4)
+    elif provider == "gemini":
+        return ChatGoogleGenerativeAI(model=model, temperature=temperature, google_api_key=api_key)
+    else:
+        raise ValueError(f"Unsupported provider: {provider}")
+
+
+def create_trading_graph(config: Dict[str, Any]) -> Any:
+    """Factory function to create the trading graph with LLM initialization."""
+    from graph_util import TechnicalTools
+    from default_config import DEFAULT_CONFIG
+    
+    # Merge with defaults
+    full_config = DEFAULT_CONFIG.copy()
+    full_config.update(config)
+    
+    # Initialize LLMs
+    agent_llm = _create_llm(
+        config=full_config,
+        provider=full_config.get("agent_llm_provider", "openai"),
+        model=full_config.get("agent_llm_model", "gpt-4o-mini"),
+        temperature=full_config.get("agent_llm_temperature", 0.1),
+    )
+    graph_llm = _create_llm(
+        config=full_config,
+        provider=full_config.get("graph_llm_provider", "openai"),
+        model=full_config.get("graph_llm_model", "gpt-4o"),
+        temperature=full_config.get("graph_llm_temperature", 0.1),
+    )
+    conversation_summary_llm = _create_llm(
+        config=full_config,
+        provider=full_config.get("conversation_summary_llm_provider", "openai"),
+        model=full_config.get("conversation_summary_llm_model", "gpt-4o-mini"),
+        temperature=full_config.get("conversation_summary_llm_temperature", 0.3),
+        use_conversation_api_key=True,
+    )
+    toolkit = TechnicalTools()
     
     return TradingGraphV2(
-        config=config,
-        agent_llm=temp_graph.agent_llm,
-        graph_llm=temp_graph.graph_llm,
-        toolkit=temp_graph.toolkit
+        config=full_config,
+        agent_llm=agent_llm,
+        graph_llm=graph_llm,
+        conversation_summary_llm=conversation_summary_llm,
+        toolkit=toolkit
     ).set_graph()

@@ -11,6 +11,7 @@ This agent:
 
 import copy
 import json
+import pandas as pd
 from typing import Dict, Any
 
 from langchain_core.messages import ToolMessage, HumanMessage
@@ -90,11 +91,14 @@ def create_indicator_agent(llm, toolkit):
             
             # CACHE MISS or STALE - Run indicator analysis
             print(f"🔄 Running indicator analysis for {symbol}|{timeframe}|{horizon}")
+            print(f"   Context key (kline_data lookup): {context_key}")
+            print(f"   Store key (analysis_store): {store_key}")
             
             # Get kline data for this context
             context_kline_data = kline_data.get(context_key, {})
             if not context_kline_data:
                 print(f"⚠️ No kline data available for {context_key}")
+                print(f"   Available kline_data keys: {list(kline_data.keys())}")
                 spec["run"].remove("indicator")
                 continue
             
@@ -185,12 +189,36 @@ def _run_indicator_analysis(
     
     chain = prompt | llm.bind_tools(tools)
     
-    # Initial message
-    messages = [HumanMessage(content=f"Analyze indicators for this {timeframe} data focusing on {horizon} trading.")]
+    # Get data overview for context
+    df = pd.DataFrame(kline_data)
+    candle_count = len(df)
+    latest_close = df['Close'].iloc[-1] if not df.empty else 0
+    
+    # Initial message with explicit instruction to use tools
+    messages = [HumanMessage(content=(
+        f"You have {candle_count} candles of {timeframe} OHLCV data (latest close: {latest_close:.2f}). "
+        f"Analyze technical indicators for {horizon} trading.\n\n"
+        f"REQUIRED: You MUST call the following indicator tools:\n"
+        f"1. compute_rsi - RSI momentum indicator\n"
+        f"2. compute_macd - MACD trend indicator\n"
+        f"3. compute_roc - Rate of Change indicator\n"
+        f"4. compute_stoch - Stochastic oscillator\n"
+        f"5. compute_willr - Williams %R indicator\n\n"
+        f"Call ALL these tools to compute indicators, then provide your interpretation."
+    ))]
     
     # Step 1: Request tool calls
     ai_response = chain.invoke({"messages": messages})
     messages.append(ai_response)
+    
+    print(f"\n🤖 LLM Response for {horizon} {timeframe}:")
+    print(f"   Has tool_calls attr: {hasattr(ai_response, 'tool_calls')}")
+    if hasattr(ai_response, "tool_calls"):
+        print(f"   Tool calls: {len(ai_response.tool_calls) if ai_response.tool_calls else 0}")
+        if ai_response.tool_calls:
+            for tc in ai_response.tool_calls:
+                print(f"      - {tc.get('name', 'unknown')}")
+    print(f"   Content preview: {ai_response.content[:200] if ai_response.content else 'None'}...")
     
     # Step 2: Execute tool calls
     tool_results = {}
@@ -240,6 +268,41 @@ def _run_indicator_analysis(
     
     # Extract interpretation
     interpretation = final_response.content if final_response else "Analysis completed"
+    
+    # Fallback if no tools were called - compute indicators directly
+    if not tool_results:
+        print(f"⚠️ Indicator agent: LLM did not call any tools for {horizon} {timeframe}")
+        print(f"   🔧 Computing indicators directly as fallback...")
+        
+        # Compute all indicators directly
+        for tool in tools:
+            try:
+                result = tool.invoke({"kline_data": copy.deepcopy(kline_data)})
+                tool_results[tool.name] = result
+                print(f"      ✓ {tool.name}: {result}")
+            except Exception as e:
+                print(f"      ✗ {tool.name} failed: {e}")
+        
+        # Generate interpretation based on computed values
+        if tool_results:
+            interpretation = f"Computed {len(tool_results)} indicators for {horizon} {timeframe}. "
+            
+            # Basic interpretation
+            rsi_val = tool_results.get("compute_rsi", {}).get("rsi_current")
+            macd_signal = tool_results.get("compute_macd", {}).get("signal")
+            
+            if rsi_val:
+                if rsi_val > 70:
+                    interpretation += f"RSI={rsi_val:.1f} (overbought). "
+                elif rsi_val < 30:
+                    interpretation += f"RSI={rsi_val:.1f} (oversold). "
+                else:
+                    interpretation += f"RSI={rsi_val:.1f} (neutral). "
+            
+            if macd_signal:
+                interpretation += f"MACD signal: {macd_signal}. "
+        else:
+            interpretation = "Unable to compute indicators - all tool executions failed."
     
     # Return structured result
     return {

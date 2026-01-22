@@ -32,7 +32,7 @@ config = {
     "conversation_summary_llm_provider": "gemini",
     "conversation_summary_llm_model": "gemini-2.5-flash",
     "conversation_summary_llm_temperature": 0.3,
-    "gemini_api_key": "AIzaSyCCCoHv7PNNuvMOy-mdi_boZAeY0DOp-8I",
+    "gemini_api_key": "AIzaSyDxF_FTVMocqqqOX1xD8-kRlxwedVcwibs",
 }
 
 def cleanup_output_folders():
@@ -189,6 +189,54 @@ def main():
                 print_separator()
             else:
                 print("⚠️  No response generated (possible error)\n")
+            
+            # Extract and display chart paths
+            analyses_required = result.get("analyses_required", {})
+            analysis_store = result.get("analysis_store", {})
+            
+            if analyses_required and analysis_store:
+                charts_found = False
+                for ctx_key, spec in analyses_required.items():
+                    # Build store key with horizon
+                    parts = ctx_key.split("|")
+                    if len(parts) == 3:
+                        symbol = parts[0]
+                        timeframe = parts[1]
+                        datetime_range = parts[2]
+                        horizon = spec.get("horizon", "")
+                        
+                        if horizon:
+                            store_key = f"{symbol}|{timeframe}|{datetime_range}|{horizon}"
+                            entry = analysis_store.get(store_key, {})
+                            
+                            # Check for pattern chart
+                            if "pattern" in spec.get("run", []):
+                                pattern_output = entry.get("pattern", {})
+                                if pattern_output:
+                                    pattern_result = pattern_output.get("result", {})
+                                    chart_path = pattern_result.get("chart_path", "")
+                                    if chart_path and os.path.exists(chart_path):
+                                        if not charts_found:
+                                            print("\n📊 GENERATED CHARTS:")
+                                            print("─" * 80)
+                                            charts_found = True
+                                        print(f"📈 Pattern Chart: {chart_path}")
+                            
+                            # Check for trend chart
+                            if "trend" in spec.get("run", []):
+                                trend_output = entry.get("trend", {})
+                                if trend_output:
+                                    trend_result = trend_output.get("result", {})
+                                    chart_path = trend_result.get("chart_path", "")
+                                    if chart_path and os.path.exists(chart_path):
+                                        if not charts_found:
+                                            print("\n📊 GENERATED CHARTS:")
+                                            print("─" * 80)
+                                            charts_found = True
+                                        print(f"📉 Trend Chart: {chart_path}")
+                
+                if charts_found:
+                    print("─" * 80 + "\n")
             
             # Update persistent state for next turn
             prev_store_size = len(state.get("analysis_store", {}))

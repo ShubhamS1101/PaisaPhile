@@ -6,7 +6,7 @@ from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
 
 genai.configure(
-    api_key="AIzaSyDN8gKMA7Atzy-AlvV3pECeL6qNrM6iI9o"
+    api_key="AIzaSyB3pyxf65xJ_zuA-hjhoeSkVqZTv5FudgY"
 )
 
 model = genai.GenerativeModel(
@@ -53,7 +53,7 @@ app = graph.compile()
 conversation_history = []
 user_input = input("HUMAN: ")
 
-while user_input.lower() not in ["exit", "quit"]:
+while user_input.lower() not in ["exit", "quit", "q"]:
     conversation_history.append(HumanMessage(content=user_input))
     result  = app.invoke({"messages": conversation_history})
     user_input = input("HUMAN: ")

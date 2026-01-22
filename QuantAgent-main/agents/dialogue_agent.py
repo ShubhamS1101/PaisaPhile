@@ -113,9 +113,20 @@ def format_context_for_dialogue(state: Dict[str, Any]) -> Dict[str, str]:
     
     if filtered_store:
         for key, entry in filtered_store.items():
-            symbol = entry.get("symbol", "Unknown")
-            timeframe = entry.get("timeframe", "Unknown")
-            horizon = entry.get("horizon", "Unknown")
+            # Extract metadata from first available agent output
+            metadata = None
+            for agent_name in ["indicator", "pattern", "trend", "decision"]:
+                if agent_name in entry and entry[agent_name]:
+                    metadata = entry[agent_name].get("metadata", {})
+                    break
+            
+            # Fallback to unknown if no metadata found
+            if not metadata:
+                metadata = {}
+            
+            symbol = metadata.get("symbol", "Unknown")
+            timeframe = metadata.get("timeframe", "Unknown")
+            horizon = metadata.get("horizon", "Unknown")
             
             analysis_parts.append(f"\n{'─'*50}")
             analysis_parts.append(f"📊 {symbol} | {timeframe} | {horizon}")
@@ -275,6 +286,11 @@ def generate_explanation(state: Dict[str, Any], llm) -> Dict[str, Any]:
     Returns:
         Updated state with explanation (always returns valid state)
     """
+    
+    # Check if explanation already exists (from clarification/validation)
+    if state.get("explanation") and state.get("intent") == "clarify":
+        print("✓ Using existing clarification message")
+        return state
     
     user_query = state.get("user_query", "")
     conversation_summary = state.get("conversation_summary", "")

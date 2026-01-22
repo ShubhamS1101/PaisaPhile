@@ -1,9 +1,0 @@
-Query #2
-Last Query: i want to know about BEL.NS performance on last day?
-============================================================
-
-- User intent: Clarify
-- Active symbol: BEL.NS
-- Horizon: Last day (short-term)
-- No decisions made
-- System unable to fetch market data

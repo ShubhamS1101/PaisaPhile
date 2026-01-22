@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Scroll Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: white;
+        }
+        
+        .test-box {
+            width: 600px;
+            height: 500px;
+            border: 5px solid blue;
+            position: relative;
+            background: #2a2a2a;
+            margin: 20px auto;
+        }
+        
+        .scroll-area {
+            position: absolute;
+            top: 100px;
+            left: 20px;
+            right: 20px;
+            bottom: 80px;
+            overflow-y: scroll;
+            background: rgba(255,0,0,0.1);
+            border: 5px solid red;
+            padding: 10px;
+        }
+        
+        .tall-content {
+            min-height: 800px;
+            background: linear-gradient(to bottom, #333, #666);
+            padding: 20px;
+        }
+        
+        .header {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            background: #444;
+            padding: 10px;
+            text-align: center;
+        }
+        
+        .footer {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            background: #444;
+            padding: 10px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <h1>Scroll Test - If this works, CSS is loading correctly</h1>
+    
+    <div class="test-box">
+        <div class="header">FIXED HEADER</div>
+        
+        <div class="scroll-area">
+            <div class="tall-content">
+                <h2>This should scroll!</h2>
+                <p>Scroll down... there's a lot of content below</p>
+                <div style="height: 100px; background: #555; margin: 10px 0;">Block 1</div>
+                <div style="height: 100px; background: #666; margin: 10px 0;">Block 2</div>
+                <div style="height: 100px; background: #555; margin: 10px 0;">Block 3</div>
+                <div style="height: 100px; background: #666; margin: 10px 0;">Block 4</div>
+                <div style="height: 100px; background: #555; margin: 10px 0;">Block 5</div>
+                <div style="height: 100px; background: #666; margin: 10px 0;">Block 6</div>
+                <div style="height: 100px; background: #555; margin: 10px 0;">Block 7</div>
+                <h2>END OF CONTENT</h2>
+            </div>
+        </div>
+        
+        <div class="footer">FIXED FOOTER</div>
+    </div>
+    
+    <div style="margin: 20px auto; max-width: 600px;">
+        <h3>Instructions:</h3>
+        <ul>
+            <li>You should see a BLUE border around the outer box</li>
+            <li>You should see a RED border around the scroll area with pink background</li>
+            <li>The scroll area should be scrollable</li>
+            <li>Header and footer should stay fixed</li>
+        </ul>
+        
+        <p><strong>If this works but your modal doesn't:</strong> The CSS file isn't loading properly in your app.</p>
+    </div>
+</body>
+</html>

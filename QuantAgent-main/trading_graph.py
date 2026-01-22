@@ -14,7 +14,7 @@ from langchain_qwq import ChatQwen
 from langgraph.prebuilt import ToolNode
 
 from default_config import DEFAULT_CONFIG
-from graph_setup_new import SetGraph
+from graph_main import TradingGraphV2
 from graph_util import TechnicalTools
 
 
@@ -39,28 +39,34 @@ class TradingGraph:
             model=self.config.get("graph_llm_model", "gpt-4o"),
             temperature=self.config.get("graph_llm_temperature", 0.1),
         )
+        self.conversation_summary_llm = self._create_llm(
+            provider=self.config.get("conversation_summary_llm_provider", "openai"),
+            model=self.config.get("conversation_summary_llm_model", "gpt-4o-mini"),
+            temperature=self.config.get("conversation_summary_llm_temperature", 0.3),
+            use_conversation_api_key=True,
+        )
         self.toolkit = TechnicalTools()
 
         # --- Create tool nodes for each agent ---
         # self.tool_nodes = self._set_tool_nodes()
 
         # --- Graph logic and setup ---
-        self.graph_setup = SetGraph(
-            self.agent_llm,
-            self.graph_llm,
-            self.toolkit,
-            # self.tool_nodes,
-        )
+        # Use TradingGraphV2 from graph_main which has all the latest fixes
+        self.graph = TradingGraphV2(
+            config=self.config,
+            agent_llm=self.agent_llm,
+            graph_llm=self.graph_llm,
+            conversation_summary_llm=self.conversation_summary_llm,
+            toolkit=self.toolkit
+        ).set_graph()
 
-        # --- The main LangGraph graph object ---
-        self.graph = self.graph_setup.set_graph()
-
-    def _get_api_key(self, provider: str = "openai") -> str:
+    def _get_api_key(self, provider: str = "openai", use_conversation_api_key: bool = False) -> str:
         """
         Get API key with proper validation and error handling.
         
         Args:
             provider: The provider name ("openai", "anthropic", or "qwen")
+            use_conversation_api_key: If True, use conversation_summary_api_key (falls back to default)
         
         Returns:
             str: The API key for the specified provider
@@ -70,7 +76,10 @@ class TradingGraph:
         """
         if provider == "openai":
             # First check if API key is provided in config
-            api_key = self.config.get("api_key")
+            if use_conversation_api_key:
+                api_key = self.config.get("conversation_summary_api_key") or self.config.get("api_key")
+            else:
+                api_key = self.config.get("api_key")
             
             # If not in config, check environment variable
             if not api_key:
@@ -159,7 +168,7 @@ class TradingGraph:
         return api_key
 
     def _create_llm(
-        self, provider: str, model: str, temperature: float
+        self, provider: str, model: str, temperature: float, use_conversation_api_key: bool = False
     ) -> BaseChatModel:
         """
         Create an LLM instance based on the provider.
@@ -168,11 +177,12 @@ class TradingGraph:
             provider: The provider name ("openai", "anthropic", or "qwen")
             model: The model name (e.g., "gpt-4o", "claude-3-5-sonnet-20241022", "qwen-vl-max-latest")
             temperature: The temperature setting for the model
+            use_conversation_api_key: If True, use conversation_summary_api_key
             
         Returns:
             BaseChatModel: An instance of the appropriate LLM class
         """
-        api_key = self._get_api_key(provider)
+        api_key = self._get_api_key(provider, use_conversation_api_key)
         
         if provider == "openai":
             return ChatOpenAI(
@@ -243,17 +253,21 @@ class TradingGraph:
             model=self.config.get("graph_llm_model", "gpt-4o"),
             temperature=self.config.get("graph_llm_temperature", 0.1),
         )
-
-        # Recreate the graph setup with new LLMs
-        self.graph_setup = SetGraph(
-            self.agent_llm,
-            self.graph_llm,
-            self.toolkit,
-            # self.tool_nodes,
+        self.conversation_summary_llm = self._create_llm(
+            provider=self.config.get("conversation_summary_llm_provider", "openai"),
+            model=self.config.get("conversation_summary_llm_model", "gpt-4o-mini"),
+            temperature=self.config.get("conversation_summary_llm_temperature", 0.3),
+            use_conversation_api_key=True,
         )
 
-        # Recreate the main graph
-        self.graph = self.graph_setup.set_graph()
+        # Recreate the graph with new LLMs
+        self.graph = TradingGraphV2(
+            config=self.config,
+            agent_llm=self.agent_llm,
+            graph_llm=self.graph_llm,
+            conversation_summary_llm=self.conversation_summary_llm,
+            toolkit=self.toolkit
+        ).set_graph()
 
     def update_api_key(self, api_key: str, provider: str = "openai"):
         """
