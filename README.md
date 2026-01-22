@@ -3,7 +3,7 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="templates/assets/dark_mode_logo/PaisaPhile Logo.png">
   <source media="(prefers-color-scheme: light)" srcset="templates/assets/light_mode_logo/PaisaPhile Logo.png">
-  <img alt="PaisaPhile Logo" src="templates/assets/light_mode_logo/PaisaPhile Logo.png" width="300">
+  <img alt="PaisaPhile Logo" src="templates/assets/dark_mode_logo/PaisaPhile Logo.png" width="300">
 </picture>
 
 <h1>PaisaPhile</h1>
