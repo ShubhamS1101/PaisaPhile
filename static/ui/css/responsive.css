@@ -1,0 +1,10 @@
+/* Responsive Design */
+@media (max-width: 768px) {
+    .pill span {
+        display: none;
+    }
+
+    .modal-content {
+        padding: 20px;
+    }
+}
