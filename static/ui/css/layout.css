@@ -1,55 +1,96 @@
-/* Main Layout */
+/* Main Layout - Premium Analyst Workspace */
 .app {
     display: flex;
     flex-direction: column;
     height: 100vh;
+    background: var(--bg-app);
 }
 
 .app.hidden {
     display: none;
 }
 
+/* ================================
+   HEADER - Clean, Professional
+================================ */
 .header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 14px 18px;
+    padding: 12px 24px;
     background: var(--bg-primary);
     border-bottom: 1px solid var(--border-color);
     box-shadow: var(--shadow-sm);
 }
 
-.brand {
+/* Brand Lockup - Bull + Name side by side */
+.brand-lockup {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.brand-bull {
+    height: 32px;
+    width: auto;
+    margin-top: 2px;
+}
+
+/* Brand text container for name + tagline */
+.brand-text {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    align-items: flex-start;
+    gap: 3px;
+    margin-top: 4px;
+}
+
+.brand-name {
+    height: 17px;
+    width: auto;
+}
+
+.brand-tagline {
+    font-size: 9px;
+    font-weight: 400;
+    color: var(--text-tertiary);
+    letter-spacing: 0.2px;
+    line-height: 1;
 }
 
 .brand-top {
     display: flex;
     align-items: center;
     gap: 10px;
-    font-size: 16px;
-    font-weight: 800;
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.3px;
 }
 
 .brand-top i {
     color: var(--accent-color);
+    font-size: 18px;
 }
 
 .brand-sub {
     font-size: 12px;
     color: var(--text-tertiary);
+    font-weight: 400;
+    letter-spacing: 0.2px;
 }
 
+/* ================================
+   HEADER ACTIONS - Minimal Pills
+================================ */
 .header-actions {
     display: flex;
-    gap: 10px;
+    gap: 8px;
 }
 
 .pill {
-    padding: 8px 12px;
-    border-radius: 10px;
+    padding: 8px 14px;
+    border-radius: 8px;
     border: 1px solid var(--border-color);
     background: var(--bg-secondary);
     color: var(--text-secondary);
@@ -57,10 +98,30 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    font-weight: 600;
+    font-weight: 500;
+    font-size: 13px;
+    transition: all 0.15s ease;
 }
 
 .pill:hover {
     background: var(--bg-tertiary);
     color: var(--text-primary);
+    border-color: var(--border-hover);
+}
+
+.pill:active {
+    transform: translateY(1px);
+}
+
+.pill i {
+    font-size: 14px;
+}
+
+/* Theme toggle specific styling */
+.pill[title="Theme"] {
+    padding: 8px 10px;
+}
+
+.pill[title="Theme"] i {
+    font-size: 16px;
 }

@@ -1,4 +1,4 @@
-/* Form Styles */
+/* Form Styles - Clean, Professional */
 .form-grid {
     display: grid;
     grid-template-columns: 1fr;
@@ -13,35 +13,35 @@
 
 .form-label {
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 500;
     color: var(--text-secondary);
 }
 
 .required {
-    color: #dc3545;
+    color: var(--error-color);
     margin-left: 2px;
-    font-weight: 700;
+    font-weight: 600;
 }
 
 .form-help {
     font-size: 12px;
     color: var(--text-tertiary);
-    line-height: 1.35;
+    line-height: 1.4;
 }
 
 .validation-message {
     display: none;
     margin-top: 6px;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
 }
 
 .form-input,
 .form-select {
     width: 100%;
-    padding: 12px 12px;
+    padding: 11px 14px;
     border: 1px solid var(--border-color);
-    border-radius: 10px;
+    border-radius: 8px;
     font-size: 14px;
     background: var(--bg-primary);
     color: var(--text-primary);
@@ -52,22 +52,16 @@
 .form-select:focus {
     outline: none;
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 3px rgba(16, 163, 127, 0.12);
+    box-shadow: 0 0 0 3px var(--accent-bg);
 }
 
 .form-input.invalid {
     border-color: var(--error-color);
-    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
+    box-shadow: 0 0 0 3px var(--error-bg);
 }
 
 .form-input.valid {
-    border-color: var(--accent-color);
-}
-
-.validation-message {
-    font-size: 12px;
-    margin-top: 2px;
-    display: none;
+    border-color: var(--success-color);
 }
 
 .validation-message.show {
@@ -79,7 +73,7 @@
 }
 
 .validation-message.success {
-    color: var(--accent-color);
+    color: var(--success-color);
 }
 
 .btn-row {
@@ -90,18 +84,24 @@
 
 .btn {
     flex: 1;
-    padding: 12px 14px;
-    border-radius: 10px;
+    padding: 11px 16px;
+    border-radius: 8px;
     border: 1px solid var(--border-color);
     background: var(--bg-tertiary);
     color: var(--text-primary);
-    font-weight: 700;
+    font-weight: 600;
     cursor: pointer;
-    transition: transform 0.08s, background 0.2s;
+    transition: all 0.15s ease;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
+    font-size: 14px;
+}
+
+.btn:hover {
+    background: var(--bg-secondary);
+    border-color: var(--border-hover);
 }
 
 .btn:active {
@@ -120,17 +120,17 @@
 }
 
 .btn-success {
-    background: #22c55e;
-    border-color: #22c55e;
+    background: var(--success-color);
+    border-color: var(--success-color);
     color: #fff;
 }
 
 .btn-success:hover {
-    background: #16a34a;
-    border-color: #16a34a;
+    background: #15803D;
+    border-color: #15803D;
 }
 
 .btn:disabled {
-    opacity: 0.55;
+    opacity: 0.5;
     cursor: not-allowed;
 }

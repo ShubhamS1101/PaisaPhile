@@ -185,6 +185,44 @@ Query: "hi"
   "clarification_question": "Hello! How can I assist you with your trading today? You can ask me about buy/sell recommendations, market trends, price checks, or explanations of technical indicators."
 }
 
+Example 4: Follow-up question about existing analysis
+Query: "what is the RSI of it?"
+CURRENT_DATETIME: "2026-01-20T14:32:00+05:30"
+CONVERSATION_SUMMARY: "User asked for BEL.NS intraday analysis. System provided HOLD recommendation."
+
+{
+  "intent": "explain",
+  "need_clarification": false,
+  "data_contexts_required": [],
+  "analyses_required": {},
+  "clarification_question": null
+}
+
+Example 5: Follow-up asking for specific indicator value
+Query: "now just tell me the RSI of it?"
+CURRENT_DATETIME: "2026-01-28T12:20:26+05:30"
+CONVERSATION_SUMMARY: "Previous query analyzed BEL.NS for long-term. Computed indicators and trend."
+
+{
+  "intent": "explain",
+  "need_clarification": false,
+  "data_contexts_required": [],
+  "analyses_required": {},
+  "clarification_question": null
+}
+
+Example 6: Follow-up with pronoun reference
+Query: "why did you recommend that?"
+CONVERSATION_SUMMARY: "Recommended HOLD for AAPL based on conflicting signals."
+
+{
+  "intent": "explain",
+  "need_clarification": false,
+  "data_contexts_required": [],
+  "analyses_required": {},
+  "clarification_question": null
+}
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 INTENT DEFINITIONS (MANDATORY)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -217,14 +255,35 @@ Use intent = "explain" when the query:
 - argues or disagrees with a recommendation
 - asks follow-ups like "should I still hold?"
 - references earlier opinions or decisions
+- uses pronouns like "it", "that", "this", "the stock", "the same"
+- asks about specific indicator values (RSI, MACD, etc.) without mentioning a symbol
+- contains words like "now tell me", "what about", "how about"
+- asks clarifying questions about previous analysis
+
+CRITICAL RULE FOR FOLLOW-UP QUESTIONS:
+If the query uses "it", "that", or other pronouns referring to previously analyzed assets,
+AND does not introduce a new symbol or explicitly request re-analysis,
+ALWAYS use intent = "explain" with NO data_contexts_required and NO analyses_required.
+The dialogue agent will use cached analysis from conversation context.
 
 Use intent = "trade" / "trend" / "compare" ONLY when:
-- a NEW symbol is introduced
-- user explicitly asks for re-analysis
+- a NEW symbol is explicitly introduced in the query
+- user explicitly asks for re-analysis ("analyze again", "refresh", "update")
 - timeframe or horizon is explicitly changed
+- user asks "should I buy/sell" for a NEW or explicitly named symbol
 
-NEVER silently reuse symbols from memory.
-If symbol is not explicitly mentioned → ask.
+Examples of EXPLAIN intent (use cached data):
+- "what is the RSI of it?"
+- "now just tell me the RSI of it?"
+- "why did you recommend that?"
+- "what about the MACD?"
+- "explain the indicators"
+- "how is the trend?"
+
+Examples of NEW ANALYSIS intent:
+- "what about AAPL?" (new symbol)
+- "analyze BEL.NS again" (explicit re-analysis)
+- "should I buy MSFT?" (new symbol with trade question)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DATA CONTEXT SEMANTICS (EXTREMELY IMPORTANT)
