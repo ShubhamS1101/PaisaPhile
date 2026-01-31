@@ -1,9 +1,10 @@
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="templates/assets/dark_mode_logo/PaisaPhile Logo.png">
-  <source media="(prefers-color-scheme: light)" srcset="templates/assets/light_mode_logo/PaisaPhile Logo.png">
-  <img alt="PaisaPhile Logo" src="templates/assets/dark_mode_logo/PaisaPhile Logo.png" width="300">
+  <source media="(prefers-color-scheme: dark)" srcset="templates/assets/logo/dark_mode/dark_mode_full.svg">
+  <source media="(prefers-color-scheme: light)" srcset="templates/assets/logo/light_mode/light_mode_full.svg">
+  <img alt="PaisaPhile Logo" src="templates/assets/logo/dark_mode/dark_mode_full.svg"
+  width="300">
 </picture>
 
 <h1>PaisaPhile</h1>
