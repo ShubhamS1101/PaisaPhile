@@ -1,29 +1,111 @@
-/* CSS Variables and Theme */
+/* CSS Variables and Theme - Premium Analyst UI */
+
+/* ================================
+   LIGHT MODE (Default) - Editorial, Professional
+================================ */
 :root {
-    --bg-primary: #ffffff;
-    --bg-secondary: #f7f7f8;
-    --bg-tertiary: #ececf1;
-    --text-primary: #0b0f14;
-    --text-secondary: #565869;
-    --text-tertiary: #8e8ea0;
-    --border-color: #e5e5e5;
-    --accent-color: #10a37f;
-    --accent-hover: #0d8c6f;
-    --error-color: #ef4444;
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-    --shadow-md: 0 6px 14px rgba(0, 0, 0, 0.08);
-    --shadow-lg: 0 14px 28px rgba(0, 0, 0, 0.12);
+    /* Backgrounds - Soft, not harsh white */
+    --bg-app: #F6F8FB;           /* Main app background */
+    --bg-primary: #FFFFFF;        /* Cards/Panels (surface) */
+    --bg-secondary: #F6F8FB;      /* Main background */
+    --bg-tertiary: #EEF2F7;       /* Elevated/Hover (surfaceAlt) */
+    
+    /* Text - Comfortable hierarchy */
+    --text-primary: #0E1A24;      /* Primary text */
+    --text-secondary: #334155;    /* Secondary/Explanation */
+    --text-tertiary: #64748B;     /* Muted/Metadata */
+    --text-disabled: #94A3B8;     /* Disabled text */
+    
+    /* Borders */
+    --border-color: #E2E8F0;      /* Clean borders */
+    --border-hover: #CBD5E1;      /* Hover state borders */
+    
+    /* Brand - Consistent green accent */
+    --accent-color: #16A34A;      /* Brand green */
+    --accent-hover: #15803D;      /* Darker on hover */
+    --accent-bg: #DCFCE7;         /* Soft green bg */
+    --accent-text: #065F46;       /* Green text on light */
+    --focus-ring: #22C55E;        /* Focus ring color */
+    
+    /* Interactive */
+    --btn-primary: #16A34A;
+    --btn-primary-hover: #15803D;
+    --btn-secondary: #EEF2F7;
+    --btn-secondary-hover: #E2E8F0;
+    
+    /* Status Colors - Controlled, not loud */
+    --success-color: #16A34A;
+    --success-bg: #DCFCE7;
+    --success-text: #065F46;
+    
+    --warning-color: #B45309;
+    --warning-bg: #FEF3C7;
+    --warning-text: #92400E;
+    
+    --error-color: #B91C1C;
+    --error-bg: #FEE2E2;
+    --error-text: #991B1B;
+    
+    /* Shadows - Subtle depth */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 12px 24px rgba(0, 0, 0, 0.08);
+    
+    /* Logo */
+    --logo-filter: none;
 }
 
+/* ================================
+   DARK MODE - Premium Analyst Workspace
+================================ */
 [data-theme="dark"] {
-    --bg-primary: #111418;
-    --bg-secondary: #0b0f14;
-    --bg-tertiary: #1b2230;
-    --text-primary: #ececec;
-    --text-secondary: #c5c5d2;
-    --text-tertiary: #8e8ea0;
-    --border-color: #273244;
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.22);
-    --shadow-md: 0 8px 18px rgba(0, 0, 0, 0.28);
-    --shadow-lg: 0 18px 36px rgba(0, 0, 0, 0.5);
+    /* Backgrounds - Layered depth, NO pure black */
+    --bg-app: #00050a;            /* Very dark blue-black (background) */
+    --bg-primary: #0F1720;        /* Cards/Panels (surface) */
+    --bg-secondary: #0A0F14;      /* Main background */
+    --bg-tertiary: #131E2A;       /* Elevated/Hover (surfaceAlt) */
+    
+    /* Text - High readability */
+    --text-primary: #E6EEF5;      /* Primary text */
+    --text-secondary: #A9B4C2;    /* Secondary */
+    --text-tertiary: #6F7C8B;     /* Muted */
+    --text-disabled: #4B5563;     /* Disabled text */
+    
+    /* Borders */
+    --border-color: #1E2A38;      /* Subtle borders */
+    --border-hover: #2D3E50;      /* Hover state */
+    
+    /* Brand - Same green, adapted for dark */
+    --accent-color: #16A34A;
+    --accent-hover: #22C55E;      /* Slightly brighter on hover */
+    --accent-bg: #062814;         /* Dark green bg (greenSoftDark) */
+    --accent-text: #ECFDF5;       /* Bright green text on dark */
+    --focus-ring: #22C55E;        /* Focus ring color */
+    
+    /* Interactive */
+    --btn-primary: #16A34A;
+    --btn-primary-hover: #15803D;
+    --btn-secondary: #131E2A;
+    --btn-secondary-hover: #1E2A38;
+    
+    /* Status Colors - Subtle on dark */
+    --success-color: #16A34A;
+    --success-bg: #062814;
+    --success-text: #ECFDF5;
+    
+    --warning-color: #B45309;
+    --warning-bg: #2A1F0A;
+    --warning-text: #FBBF24;
+    
+    --error-color: #B91C1C;
+    --error-bg: #2A0F0F;
+    --error-text: #F87171;
+    
+    /* Shadows - Deeper for dark mode */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 16px 32px rgba(0, 0, 0, 0.5);
+    
+    /* Logo */
+    --logo-filter: brightness(1.1);
 }

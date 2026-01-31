@@ -16,10 +16,12 @@ async function sendMessage() {
         const res = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: text, config: pendingSettings })
+            body: JSON.stringify({ message: text, config: sessionSettings })  // Use sessionSettings not pendingSettings
         });
         const data = await res.json();
         removeTyping(typingId);
+        console.log('API Response:', data);
+        console.log('Charts received:', data.charts?.length || 0, data.charts);
         if (data && data.success) {
             renderAssistant(data.response || '', data.charts || []);
         } else {
@@ -29,7 +31,8 @@ async function sendMessage() {
         removeTyping(typingId);
         renderError('Failed to send message.');
     } finally {
-        pendingSettings = null;
+        // Keep sessionSettings persistent - don't clear it
+        pendingSettings = null;  // Clear temporary validation settings only
         isProcessing = false;
         composer.disabled = false;
         sendBtn.disabled = false;

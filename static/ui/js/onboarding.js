@@ -56,6 +56,11 @@ async function handleStartChat() {
     startChatBtn.innerHTML = '<i class="fa-solid fa-rocket"></i> Start Chat';
 }
 
+// Get CSS variable value
+function getCSSVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
 // Validate all required fields
 function validateAllFields() {
     const fields = [
@@ -67,9 +72,11 @@ function validateAllFields() {
         { name: 'Conversation API Key', element: conversationApiKeyInput }
     ];
     
+    const errorColor = getCSSVar('--error-color') || '#B91C1C';
+    
     for (const field of fields) {
         if (!field.element.value.trim()) {
-            field.element.style.borderColor = '#dc3545';
+            field.element.style.borderColor = errorColor;
             return {
                 valid: false,
                 message: `Please fill all required fields: ${field.name} is empty`
@@ -89,25 +96,27 @@ async function validateAllApiKeys() {
     ];
     
     let allValid = true;
+    const errorColor = getCSSVar('--error-color') || '#B91C1C';
+    const successColor = getCSSVar('--success-color') || '#16A34A';
     
     for (const validation of validations) {
         const result = await validateApiKey(validation.provider, validation.apiKey);
         
         if (!result.valid) {
             allValid = false;
-            validation.input.style.borderColor = '#dc3545';
+            validation.input.style.borderColor = errorColor;
             const messageEl = document.getElementById(validation.messageEl);
             if (messageEl) {
                 messageEl.textContent = `${validation.name} API not valid: ${result.error}`;
-                messageEl.style.color = '#dc3545';
+                messageEl.style.color = errorColor;
                 messageEl.style.display = 'block';
             }
         } else {
-            validation.input.style.borderColor = '#28a745';
+            validation.input.style.borderColor = successColor;
             const messageEl = document.getElementById(validation.messageEl);
             if (messageEl) {
                 messageEl.textContent = `${validation.name} API validated successfully`;
-                messageEl.style.color = '#28a745';
+                messageEl.style.color = successColor;
                 messageEl.style.display = 'block';
             }
         }
@@ -190,8 +199,15 @@ async function startSession() {
         conversation_model: settings.conversation.model || null
     };
     
-    // Store settings for API calls
-    pendingSettings = config;
+    // Store settings for API calls (both temporary and persistent)
+    pendingSettings = config;  // For validation flow
+    sessionSettings = config;  // Persisted for all API calls
+    
+    console.log('✅ Settings saved:', {
+        agent: config.agent_provider,
+        graph: config.graph_provider,
+        conversation: config.conversation_provider
+    });
     
     // If this is initial setup
     if (!sessionActive) {
@@ -199,7 +215,10 @@ async function startSession() {
         composer.disabled = false;
         sendBtn.disabled = false;
         
-        // Show chat interface
+        // Hide setup page, show chat interface
+        if (setupPage) {
+            setupPage.classList.add('hidden');
+        }
         document.querySelector('.app').classList.remove('hidden');
         
         composer.focus();
@@ -208,15 +227,29 @@ async function startSession() {
             renderAssistant("Hello! I'm PaisaPhile. Ask me real market questions — trends, patterns, indicators, or price checks.");
             hasShownWelcome = true;
         }
+    } else {
+        // If session already active (returning from settings), hide setup page and show app
+        if (setupPage) {
+            setupPage.classList.add('hidden');
+        }
+        document.querySelector('.app').classList.remove('hidden');
+        composer.focus();
     }
     
-    // Close modal
-    settingsModal.classList.add('hidden');
+    // Hide back button and reset title for next time
+    const backBtn = document.getElementById('backToChat');
+    if (backBtn) {
+        backBtn.classList.add('hidden');
+    }
+    const setupTitle = document.getElementById('setupTitle');
+    const setupDescription = document.getElementById('setupDescription');
+    if (setupTitle) setupTitle.textContent = 'Setup Configuration';
+    if (setupDescription) setupDescription.textContent = 'Configure your LLM providers for Agent, Graph, and Conversation components';
     
     // Update button text for next time
     const btnText = document.getElementById('startChatBtnText');
-    if (btnText && sessionActive) {
-        btnText.textContent = 'Save Settings';
+    if (btnText) {
+        btnText.textContent = 'Start Chat';
     }
 }
 

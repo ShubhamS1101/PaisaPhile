@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PaisaPhile</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="/static/ui/css/variables.css" />
+    <link rel="stylesheet" href="/static/ui/css/base.css" />
+    <link rel="stylesheet" href="/static/ui/css/setup-page.css" />
+    <link rel="stylesheet" href="/static/ui/css/forms.css" />
+    <link rel="stylesheet" href="/static/ui/css/layout.css" />
+    <link rel="stylesheet" href="/static/ui/css/chat.css" />
+    <link rel="stylesheet" href="/static/ui/css/composer.css" />
+    <link rel="stylesheet" href="/static/ui/css/responsive.css" />
+</head>
+
+<body>
+    <!-- ================================
+         SETUP PAGE - Full Page Configuration
+    ================================ -->
+    <div id="setupPage" class="setup-page">
+        <!-- Top Bar -->
+        <header class="setup-header">
+            <div class="setup-header-left">
+                <button id="backToChat" class="header-icon-btn back-btn hidden" title="Back to Chat">
+                    <i class="fa-solid fa-arrow-left"></i>
+                </button>
+                <div class="brand-lockup">
+                    <img id="setupLogoBull" class="brand-bull" src="/templates/assets/logo/dark_mode/dark_mode_bull.svg" alt="PaisaPhile" />
+                    <div class="brand-text">
+                        <img id="setupLogoName" class="brand-name" src="/templates/assets/logo/dark_mode/dark_mode_name.svg" alt="PaisaPhile" />
+                        <span class="brand-tagline">Think through the market</span>
+                    </div>
+                </div>
+            </div>
+            <div class="setup-header-right">
+                <button id="setupThemeBtn" class="header-icon-btn" title="Toggle Theme">
+                    <i class="fa-solid fa-sun"></i>
+                </button>
+                <button id="setupHelpBtn" class="header-icon-btn" title="Help">
+                    <i class="fa-solid fa-circle-question"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Page Title Section -->
+        <div class="setup-title-section">
+            <h1 id="setupTitle" class="setup-title">Setup Configuration</h1>
+            <p id="setupDescription" class="setup-description">Configure your LLM providers for Agent, Graph, and Conversation components</p>
+        </div>
+
+        <!-- Main Configuration Content -->
+        <main class="setup-content">
+            <div class="setup-content-inner">
+                
+                <!-- Agent LLM Section -->
+                <section class="config-section">
+                    <div class="section-header">
+                        <div class="section-icon">
+                            <i class="fa-solid fa-robot"></i>
+                        </div>
+                        <div class="section-info">
+                            <h2 class="section-title">Agent LLM</h2>
+                            <p class="section-subtitle">For indicator, pattern, and trend analysis agents</p>
+                        </div>
+                    </div>
+                    
+                    <div class="section-specs">
+                        <div class="spec-row">
+                            <span class="spec-label">Usage:</span>
+                            <span class="spec-value">Executes technical analysis tasks (RSI, MACD, candlestick patterns)</span>
+                        </div>
+                        <div class="spec-row">
+                            <span class="spec-label">Recommended:</span>
+                            <span class="spec-value">GPT-4o-mini, Claude Haiku, Gemini Flash</span>
+                        </div>
+                    </div>
+                    
+                    <div class="section-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label" for="agentProvider">Provider <span class="required">*</span></label>
+                                <select id="agentProvider" class="form-select" required>
+                                    <option value="">Select Provider</option>
+                                    <option value="openai">OpenAI</option>
+                                    <option value="anthropic">Anthropic (Claude)</option>
+                                    <option value="gemini">Google Gemini</option>
+                                    <option value="qwen">Qwen</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="agentModel">Model <span class="optional">(optional)</span></label>
+                                <input id="agentModel" type="text" class="form-input" placeholder="e.g., gpt-4o-mini" />
+                            </div>
+                        </div>
+                        <div class="form-group full-width">
+                            <label class="form-label" for="agentApiKey">API Key <span class="required">*</span></label>
+                            <input id="agentApiKey" type="password" class="form-input" placeholder="Enter your API key" autocomplete="off" required />
+                            <div id="agentValidation" class="validation-message"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Graph LLM Section -->
+                <section class="config-section">
+                    <div class="section-header">
+                        <div class="section-icon">
+                            <i class="fa-solid fa-project-diagram"></i>
+                        </div>
+                        <div class="section-info">
+                            <h2 class="section-title">Graph LLM</h2>
+                            <p class="section-subtitle">For planning, routing, and orchestration</p>
+                        </div>
+                    </div>
+                    
+                    <div class="section-specs">
+                        <div class="spec-row">
+                            <span class="spec-label">Usage:</span>
+                            <span class="spec-value">Controls workflow, coordinates multi-step analysis</span>
+                        </div>
+                        <div class="spec-row">
+                            <span class="spec-label">Recommended:</span>
+                            <span class="spec-value">GPT-4o, Claude Sonnet, Gemini Pro</span>
+                        </div>
+                    </div>
+                    
+                    <div class="section-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label" for="graphProvider">Provider <span class="required">*</span></label>
+                                <select id="graphProvider" class="form-select" required>
+                                    <option value="">Select Provider</option>
+                                    <option value="openai">OpenAI</option>
+                                    <option value="anthropic">Anthropic (Claude)</option>
+                                    <option value="gemini">Google Gemini</option>
+                                    <option value="qwen">Qwen</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="graphModel">Model <span class="optional">(optional)</span></label>
+                                <input id="graphModel" type="text" class="form-input" placeholder="e.g., gpt-4o" />
+                            </div>
+                        </div>
+                        <div class="form-group full-width">
+                            <label class="form-label" for="graphApiKey">API Key <span class="required">*</span></label>
+                            <input id="graphApiKey" type="password" class="form-input" placeholder="Enter your API key" autocomplete="off" required />
+                            <div id="graphValidation" class="validation-message"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Conversation LLM Section -->
+                <section class="config-section">
+                    <div class="section-header">
+                        <div class="section-icon">
+                            <i class="fa-solid fa-comments"></i>
+                        </div>
+                        <div class="section-info">
+                            <h2 class="section-title">Conversation LLM</h2>
+                            <p class="section-subtitle">For memory, summaries, and context management</p>
+                        </div>
+                    </div>
+                    
+                    <div class="section-specs">
+                        <div class="spec-row">
+                            <span class="spec-label">Usage:</span>
+                            <span class="spec-value">Manages chat history, maintains context across sessions</span>
+                        </div>
+                        <div class="spec-row">
+                            <span class="spec-label">Recommended:</span>
+                            <span class="spec-value">GPT-4o-mini, Claude Haiku, Gemini Flash</span>
+                        </div>
+                    </div>
+                    
+                    <div class="section-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label" for="conversationProvider">Provider <span class="required">*</span></label>
+                                <select id="conversationProvider" class="form-select" required>
+                                    <option value="">Select Provider</option>
+                                    <option value="openai">OpenAI</option>
+                                    <option value="anthropic">Anthropic (Claude)</option>
+                                    <option value="gemini">Google Gemini</option>
+                                    <option value="qwen">Qwen</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="conversationModel">Model <span class="optional">(optional)</span></label>
+                                <input id="conversationModel" type="text" class="form-input" placeholder="e.g., gpt-4o-mini" />
+                            </div>
+                        </div>
+                        <div class="form-group full-width">
+                            <label class="form-label" for="conversationApiKey">API Key <span class="required">*</span></label>
+                            <input id="conversationApiKey" type="password" class="form-input" placeholder="Enter your API key" autocomplete="off" required />
+                            <div id="conversationValidation" class="validation-message"></div>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+
+        <!-- Sticky Bottom Action Bar -->
+        <footer class="setup-footer">
+            <div class="setup-footer-inner">
+                <p class="footer-hint">All configurations are stored locally in your browser</p>
+                <button id="startChatBtn" class="btn-start">
+                    <span id="startChatBtnText">Start Chat</span>
+                    <i class="fa-solid fa-arrow-right"></i>
+                </button>
+            </div>
+        </footer>
+    </div>
+
+    <!-- ================================
+         SETTINGS PAGE - Separate page for updating config from chat
+    ================================ -->
+    <div id="settingsPage" class="setup-page hidden">
+        <!-- Top Bar -->
+        <header class="setup-header">
+            <div class="setup-header-left">
+                <button id="settingsBackBtn" class="header-icon-btn back-btn-visible" title="Back to Chat">
+                    <i class="fa-solid fa-arrow-left"></i>
+                </button>
+                <div class="brand-lockup">
+                    <img id="settingsLogoBull" class="brand-bull" src="/templates/assets/logo/dark_mode/dark_mode_bull.svg" alt="PaisaPhile" />
+                    <div class="brand-text">
+                        <img id="settingsLogoName" class="brand-name" src="/templates/assets/logo/dark_mode/dark_mode_name.svg" alt="PaisaPhile" />
+                        <span class="brand-tagline">Think through the market</span>
+                    </div>
+                </div>
+            </div>
+            <div class="setup-header-right">
+                <button id="settingsThemeBtn" class="header-icon-btn" title="Toggle Theme">
+                    <i class="fa-solid fa-sun"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Page Title Section -->
+        <div class="setup-title-section">
+            <h1 class="setup-title">Settings</h1>
+            <p class="setup-description">Update your LLM provider configuration</p>
+        </div>
+
+        <!-- Main Configuration Content -->
+        <main class="setup-content">
+            <div class="setup-content-inner">
+                
+                <!-- Agent LLM Section -->
+                <section class="config-section">
+                    <div class="section-header">
+                        <div class="section-icon">
+                            <i class="fa-solid fa-robot"></i>
+                        </div>
+                        <div class="section-info">
+                            <h2 class="section-title">Agent LLM</h2>
+                            <p class="section-subtitle">For indicator, pattern, and trend analysis agents</p>
+                        </div>
+                    </div>
+                    
+                    <div class="section-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label" for="settingsAgentProvider">Provider <span class="required">*</span></label>
+                                <select id="settingsAgentProvider" class="form-select" required>
+                                    <option value="">Select Provider</option>
+                                    <option value="openai">OpenAI</option>
+                                    <option value="anthropic">Anthropic (Claude)</option>
+                                    <option value="gemini">Google Gemini</option>
+                                    <option value="qwen">Qwen</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="settingsAgentModel">Model <span class="optional">(optional)</span></label>
+                                <input id="settingsAgentModel" type="text" class="form-input" placeholder="e.g., gpt-4o-mini" />
+                            </div>
+                        </div>
+                        <div class="form-group full-width">
+                            <label class="form-label" for="settingsAgentApiKey">API Key <span class="required">*</span></label>
+                            <input id="settingsAgentApiKey" type="password" class="form-input" placeholder="Enter your API key" autocomplete="off" required />
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Graph LLM Section -->
+                <section class="config-section">
+                    <div class="section-header">
+                        <div class="section-icon">
+                            <i class="fa-solid fa-project-diagram"></i>
+                        </div>
+                        <div class="section-info">
+                            <h2 class="section-title">Graph LLM</h2>
+                            <p class="section-subtitle">For planning, routing, and orchestration</p>
+                        </div>
+                    </div>
+                    
+                    <div class="section-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label" for="settingsGraphProvider">Provider <span class="required">*</span></label>
+                                <select id="settingsGraphProvider" class="form-select" required>
+                                    <option value="">Select Provider</option>
+                                    <option value="openai">OpenAI</option>
+                                    <option value="anthropic">Anthropic (Claude)</option>
+                                    <option value="gemini">Google Gemini</option>
+                                    <option value="qwen">Qwen</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="settingsGraphModel">Model <span class="optional">(optional)</span></label>
+                                <input id="settingsGraphModel" type="text" class="form-input" placeholder="e.g., gpt-4o" />
+                            </div>
+                        </div>
+                        <div class="form-group full-width">
+                            <label class="form-label" for="settingsGraphApiKey">API Key <span class="required">*</span></label>
+                            <input id="settingsGraphApiKey" type="password" class="form-input" placeholder="Enter your API key" autocomplete="off" required />
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Conversation LLM Section -->
+                <section class="config-section">
+                    <div class="section-header">
+                        <div class="section-icon">
+                            <i class="fa-solid fa-comments"></i>
+                        </div>
+                        <div class="section-info">
+                            <h2 class="section-title">Conversation LLM</h2>
+                            <p class="section-subtitle">For memory, summaries, and context management</p>
+                        </div>
+                    </div>
+                    
+                    <div class="section-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label" for="settingsConversationProvider">Provider <span class="required">*</span></label>
+                                <select id="settingsConversationProvider" class="form-select" required>
+                                    <option value="">Select Provider</option>
+                                    <option value="openai">OpenAI</option>
+                                    <option value="anthropic">Anthropic (Claude)</option>
+                                    <option value="gemini">Google Gemini</option>
+                                    <option value="qwen">Qwen</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="settingsConversationModel">Model <span class="optional">(optional)</span></label>
+                                <input id="settingsConversationModel" type="text" class="form-input" placeholder="e.g., gpt-4o-mini" />
+                            </div>
+                        </div>
+                        <div class="form-group full-width">
+                            <label class="form-label" for="settingsConversationApiKey">API Key <span class="required">*</span></label>
+                            <input id="settingsConversationApiKey" type="password" class="form-input" placeholder="Enter your API key" autocomplete="off" required />
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+
+        <!-- Bottom Action Bar -->
+        <footer class="setup-footer">
+            <div class="setup-footer-inner">
+                <p class="footer-hint">Changes will be applied to future API calls</p>
+                <button id="continueChatBtn" class="btn-start">
+                    <span>Continue Chat</span>
+                    <i class="fa-solid fa-arrow-right"></i>
+                </button>
+            </div>
+        </footer>
+    </div>
+
+    <!-- ================================
+         HELP PAGE - Documentation & Resources
+    ================================ -->
+    <div id="helpPage" class="setup-page hidden">
+        <!-- Top Bar -->
+        <header class="setup-header">
+            <div class="setup-header-left">
+                <button id="helpBackBtn" class="header-icon-btn back-btn-visible" title="Back">
+                    <i class="fa-solid fa-arrow-left"></i>
+                </button>
+                <div class="brand-lockup">
+                    <img id="helpLogoBull" class="brand-bull" src="/templates/assets/logo/dark_mode/dark_mode_bull.svg" alt="PaisaPhile" />
+                    <div class="brand-text">
+                        <img id="helpLogoName" class="brand-name" src="/templates/assets/logo/dark_mode/dark_mode_name.svg" alt="PaisaPhile" />
+                        <span class="brand-tagline">Think through the market</span>
+                    </div>
+                </div>
+            </div>
+            <div class="setup-header-right">
+                <button id="helpThemeBtn" class="header-icon-btn" title="Toggle Theme">
+                    <i class="fa-solid fa-sun"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Page Title Section -->
+        <div class="setup-title-section">
+            <h1 class="setup-title">Help & Resources</h1>
+            <p class="setup-description">Documentation, guides, and support for PaisaPhile</p>
+        </div>
+
+        <!-- Help Content -->
+        <main class="setup-content">
+            <div class="setup-content-inner">
+                
+                <!-- Getting Started Section -->
+                <section class="config-section">
+                    <div class="section-header">
+                        <div class="section-icon">
+                            <i class="fa-solid fa-rocket"></i>
+                        </div>
+                        <div class="section-info">
+                            <h2 class="section-title">Getting Started</h2>
+                            <p class="section-subtitle">Quick start guide for PaisaPhile</p>
+                        </div>
+                    </div>
+                    <div class="help-content">
+                        <p>PaisaPhile is an AI-powered trading analysis assistant that helps you analyze market patterns, trends, and indicators using advanced LLM agents.</p>
+                        <ol>
+                            <li>Configure your LLM providers (OpenAI, Anthropic, Gemini, or Qwen)</li>
+                            <li>Start a chat and ask about any market or trading pair</li>
+                            <li>Get detailed analysis with pattern recognition and trend analysis</li>
+                        </ol>
+                    </div>
+                </section>
+
+                <!-- GitHub & Documentation Section -->
+                <section class="config-section">
+                    <div class="section-header">
+                        <div class="section-icon">
+                            <i class="fa-brands fa-github"></i>
+                        </div>
+                        <div class="section-info">
+                            <h2 class="section-title">Source Code & Documentation</h2>
+                            <p class="section-subtitle">View the project on GitHub</p>
+                        </div>
+                    </div>
+                    <div class="help-content">
+                        <p>PaisaPhile is open source. View the full source code, report issues, and contribute on GitHub.</p>
+                        <div class="help-links">
+                            <a href="https://github.com/ShubhamS1101/PaisaPhile" target="_blank" rel="noopener noreferrer" class="help-link">
+                                <i class="fa-brands fa-github"></i>
+                                <span>GitHub Repository</span>
+                                <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                            </a>
+        
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="setup-footer">
+            <div class="setup-footer-inner">
+                <p class="footer-hint">Built with ❤️ for traders</p>
+                <button id="helpCloseBtn" class="btn-start">
+                    <span>Got it</span>
+                    <i class="fa-solid fa-check"></i>
+                </button>
+            </div>
+        </footer>
+    </div>
+
+    <!-- ================================
+         CHAT APPLICATION - Hidden Initially
+    ================================ -->
+    <div class="app hidden">
+        <div class="header">
+            <div class="brand-lockup">
+                <img id="headerLogoBull" class="brand-bull" src="/templates/assets/logo/dark_mode/dark_mode_bull.svg" alt="PaisaPhile" />
+                <div class="brand-text">
+                    <img id="headerLogoName" class="brand-name" src="/templates/assets/logo/dark_mode/dark_mode_name.svg" alt="PaisaPhile" />
+                    <span class="brand-tagline">Think through the market</span>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button id="openSettings" class="pill" title="Settings"><i class="fa-solid fa-gear"></i><span>Settings</span></button>
+                <button id="resetSession" class="pill" title="New Chat"><i class="fa-solid fa-plus"></i><span>New Chat</span></button>
+                <button id="toggleTheme" class="pill" title="Theme"><i class="fa-solid fa-sun"></i></button>
+            </div>
+        </div>
+
+        <div class="chat">
+            <div id="messages" class="messages">
+                <div class="wrap" id="messagesWrap"></div>
+            </div>
+
+            <div class="composer">
+                <div class="composer-inner">
+                    <textarea id="composer" placeholder="Ask about markets, trends, patterns, indicators…" disabled></textarea>
+                    <button id="send" class="send" disabled title="Send"><i class="fa-solid fa-paper-plane"></i></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Modules -->
+    <script src="/static/ui/js/config.js"></script>
+    <script src="/static/ui/js/dom.js"></script>
+    <script src="/static/ui/js/state.js"></script>
+    <script src="/static/ui/js/theme.js"></script>
+    <script src="/static/ui/js/utils.js"></script>
+    <script src="/static/ui/js/validation.js"></script>
+    <script src="/static/ui/js/render.js"></script>
+    <script src="/static/ui/js/api.js"></script>
+    <script src="/static/ui/js/onboarding.js"></script>
+    <script src="/static/ui/js/events.js"></script>
+</body>
+
+</html>

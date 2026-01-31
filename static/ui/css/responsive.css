@@ -1,10 +1,149 @@
-/* Responsive Design */
+/* Responsive Design - Premium Analyst UI */
+
+/* Tablet and below */
 @media (max-width: 768px) {
+    .header {
+        padding: 12px 16px;
+    }
+    
+    .brand-logo {
+        height: 30px;
+    }
+    
+    .brand-top {
+        font-size: 15px;
+    }
+    
+    .brand-sub {
+        font-size: 11px;
+    }
+    
     .pill span {
         display: none;
     }
+    
+    .pill {
+        padding: 8px 10px;
+    }
 
     .modal-content {
-        padding: 20px;
+        width: 95%;
+        margin: 8px;
+    }
+    
+    .modal-header {
+        padding: 20px 20px 14px;
+    }
+    
+    .modal-title {
+        font-size: 18px;
+    }
+    
+    .modal-header-actions {
+        top: 20px;
+        right: 20px;
+    }
+    
+    .onboarding-container {
+        padding: 20px 16px;
+    }
+    
+    .config-form {
+        padding: 16px;
+    }
+    
+    .wrap {
+        padding: 0 8px;
+    }
+    
+    .charts-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .composer {
+        padding: 12px 16px;
+    }
+    
+    .composer-inner {
+        gap: 10px;
+    }
+}
+
+/* Mobile */
+@media (max-width: 480px) {
+    .header {
+        padding: 10px 12px;
+    }
+    
+    .brand {
+        gap: 10px;
+    }
+    
+    .brand-logo {
+        height: 26px;
+    }
+    
+    .brand-sub {
+        display: none;
+    }
+    
+    .header-actions {
+        gap: 6px;
+    }
+    
+    .pill {
+        padding: 7px 9px;
+    }
+    
+    .modal-theme-btn,
+    .modal-close-btn {
+        width: 34px;
+        height: 34px;
+        font-size: 14px;
+    }
+    
+    .page-header {
+        padding: 16px;
+    }
+    
+    .page-header i {
+        font-size: 28px;
+    }
+    
+    .page-header h3 {
+        font-size: 16px;
+    }
+    
+    .llm-specs {
+        padding: 14px 16px;
+    }
+    
+    .spec-item {
+        font-size: 12px;
+    }
+    
+    .msg {
+        gap: 10px;
+    }
+    
+    .avatar {
+        width: 32px;
+        height: 32px;
+        font-size: 13px;
+    }
+    
+    .bubble .text {
+        font-size: 14px;
+    }
+    
+    textarea {
+        min-height: 44px;
+        padding: 12px 14px;
+        font-size: 14px;
+    }
+    
+    .send {
+        width: 44px;
+        height: 44px;
     }
 }

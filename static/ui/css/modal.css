@@ -1,11 +1,12 @@
 /* ================================
-   MODAL OVERLAY
+   MODAL OVERLAY - Premium Backdrop
 ================================ */
 .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.65);
-    backdrop-filter: blur(8px);
+    background: rgba(11, 15, 20, 0.75);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -24,11 +25,11 @@
 
 .modal-content {
     background: var(--bg-primary);
-    border-radius: 0;
+    border-radius: 12px;
     width: 92%;
     max-width: 800px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    border: 2px solid var(--border-color);
+    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--border-color);
     position: relative;
 }
 
@@ -50,7 +51,7 @@
 }
 
 /* ================================
-   ONBOARDING MODAL
+   ONBOARDING MODAL - Clean Layout
 ================================ */
 .onboarding-modal {
     width: 100%;
@@ -62,34 +63,41 @@
 }
 
 /* ================================
-   FIXED HEADER
+   FIXED HEADER - Professional
 ================================ */
 .modal-header {
-    padding: 28px 32px 20px;
-    border-bottom: 2px solid var(--border-color);
-    background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+    padding: 24px 28px 18px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary);
     flex-shrink: 0;
     position: relative;
+}
+
+.modal-logo {
+    height: 28px;
+    width: auto;
+    filter: var(--logo-filter);
 }
 
 .modal-title {
     display: flex;
     align-items: center;
     gap: 12px;
-    font-size: 22px;
-    font-weight: 700;
-    margin-bottom: 10px;
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--text-primary);
 }
 
 .modal-title i {
-    color: var(--primary);
-    font-size: 24px;
+    color: var(--accent-color);
+    font-size: 20px;
 }
 
 .modal-header-actions {
     position: absolute;
-    top: 28px;
-    right: 32px;
+    top: 24px;
+    right: 28px;
     display: flex;
     gap: 8px;
 }
@@ -97,34 +105,29 @@
 .modal-theme-btn,
 .modal-close-btn {
     background: var(--bg-primary);
-    border: 2px solid var(--border-color);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
-    width: 40px;
-    height: 40px;
+    width: 38px;
+    height: 38px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    color: var(--text-primary);
-    transition: all 0.3s ease;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    font-size: 18px;
+    color: var(--text-secondary);
+    transition: all 0.2s ease;
+    font-size: 16px;
 }
 
 .modal-theme-btn:hover {
-    background: var(--primary);
-    color: white;
-    border-color: var(--primary);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    background: var(--accent-bg);
+    color: var(--accent-color);
+    border-color: var(--accent-color);
 }
 
 .modal-close-btn:hover {
-    background: #dc3545;
-    color: white;
-    border-color: #dc3545;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+    background: var(--error-bg);
+    color: var(--error-color);
+    border-color: var(--error-color);
 }
 
 .modal-subtitle {
@@ -132,10 +135,11 @@
     color: var(--text-secondary);
     margin: 0;
     line-height: 1.5;
+    max-width: 500px;
 }
 
 /* ================================
-   PROGRESS DOTS - TOP
+   PROGRESS DOTS - Minimal
 ================================ */
 .onboarding-progress {
     position: absolute;
@@ -144,22 +148,22 @@
     right: 20px;
     display: flex;
     justify-content: center;
-    gap: 12px;
+    gap: 10px;
 }
 
 .progress-dot {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: var(--border-color);
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: all 0.2s ease;
 }
 
 .progress-dot.active {
-    background: var(--primary);
-    width: 28px;
-    border-radius: 6px;
+    background: var(--accent-color);
+    width: 24px;
+    border-radius: 4px;
 }
 
 /* ================================
@@ -169,11 +173,12 @@
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 32px;
+    padding: 28px;
+    background: var(--bg-app);
 }
 
 .onboarding-container::-webkit-scrollbar {
-    width: 10px;
+    width: 8px;
 }
 
 .onboarding-container::-webkit-scrollbar-track {
@@ -182,8 +187,7 @@
 
 .onboarding-container::-webkit-scrollbar-thumb {
     background: var(--border-color);
-    border-radius: 5px;
-    border: 2px solid var(--bg-secondary);
+    border-radius: 4px;
 }
 
 .onboarding-container::-webkit-scrollbar-thumb:hover {
@@ -196,62 +200,61 @@
 .onboarding-page {
     display: block;
     width: 100%;
-    padding-bottom: 30px;
+    padding-bottom: 24px;
 }
 
 /* ================================
-   SECTION HEADERS
+   SECTION HEADERS - Clean, Professional
 ================================ */
 .page-header {
     text-align: center;
-    margin-bottom: 24px;
-    padding: 24px;
-    background: var(--bg-secondary);
-    border-radius: 12px;
+    margin-bottom: 20px;
+    padding: 20px;
+    background: var(--bg-primary);
+    border-radius: 10px;
     border: 1px solid var(--border-color);
 }
 
 .page-header i {
-    font-size: 42px;
-    color: var(--primary);
-    margin-bottom: 12px;
+    font-size: 36px;
+    color: var(--accent-color);
+    margin-bottom: 10px;
     display: block;
 }
 
 .page-header h3 {
-    font-size: 20px;
-    font-weight: 700;
+    font-size: 18px;
+    font-weight: 600;
     margin-bottom: 6px;
     color: var(--text-primary);
 }
 
 .page-header p {
-    font-size: 14px;
+    font-size: 13px;
     color: var(--text-secondary);
     line-height: 1.5;
 }
 
 /* ================================
-   LLM SPECIFICATIONS
+   LLM SPECIFICATIONS - Data-first
 ================================ */
 .llm-specs {
-    background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
-    border: 2px solid var(--border-color);
-    border-radius: 12px;
-    padding: 20px 24px;
-    margin-bottom: 28px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
     max-width: 600px;
     margin-left: auto;
     margin-right: auto;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 .spec-item {
     font-size: 13px;
-    line-height: 1.7;
+    line-height: 1.6;
     color: var(--text-secondary);
-    margin-bottom: 12px;
-    padding-left: 20px;
+    margin-bottom: 10px;
+    padding-left: 18px;
     position: relative;
 }
 
@@ -260,54 +263,56 @@
 }
 
 .spec-item::before {
-    content: "▸";
+    content: "•";
     position: absolute;
     left: 0;
-    color: var(--primary);
+    color: var(--accent-color);
     font-weight: bold;
 }
 
 .spec-item strong {
-    color: var(--primary);
-    font-weight: 700;
+    color: var(--text-primary);
+    font-weight: 600;
 }
 
 .config-form {
     max-width: 600px;
-    margin: 0 auto 50px;
-    padding: 24px;
+    margin: 0 auto 40px;
+    padding: 20px;
     background: var(--bg-primary);
-    border-radius: 12px;
+    border-radius: 10px;
     border: 1px solid var(--border-color);
 }
 
 /* ================================
-   NAV BUTTONS - BOTTOM
+   NAV BUTTONS - Minimal
 ================================ */
 .onboarding-nav {
-    padding: 20px 32px;
-    border-top: 2px solid var(--border-color);
-    background: linear-gradient(180deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+    padding: 18px 28px;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-primary);
     display: flex;
     justify-content: center;
     flex-shrink: 0;
 }
 
 .onboarding-nav .btn {
-    padding: 14px 32px;
-    font-size: 16px;
+    padding: 12px 28px;
+    font-size: 15px;
     font-weight: 600;
     border-radius: 8px;
-    transition: all 0.3s ease;
+    transition: all 0.2s ease;
 }
 
 .onboarding-nav .btn-primary {
-    box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: #fff;
 }
 
 .onboarding-nav .btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(0, 123, 255, 0.4);
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
 }
 
 .nav-left,

@@ -267,7 +267,19 @@ def _run_indicator_analysis(
             )
     
     # Extract interpretation
-    interpretation = final_response.content if final_response else "Analysis completed"
+    if final_response:
+        # Handle both string and list-based content formats
+        if isinstance(final_response.content, list):
+            # New format: [{'type': 'text', 'text': '...'}]
+            interpretation = "".join(
+                block.get('text', '') for block in final_response.content 
+                if isinstance(block, dict) and block.get('type') == 'text'
+            )
+        else:
+            # Old format: simple string
+            interpretation = final_response.content
+    else:
+        interpretation = "Analysis completed"
     
     # Fallback if no tools were called - compute indicators directly
     if not tool_results:
@@ -287,11 +299,31 @@ def _run_indicator_analysis(
         if tool_results:
             interpretation = f"Computed {len(tool_results)} indicators for {horizon} {timeframe}. "
             
-            # Basic interpretation
-            rsi_val = tool_results.get("compute_rsi", {}).get("rsi_current")
-            macd_signal = tool_results.get("compute_macd", {}).get("signal")
+            # Basic interpretation - extract latest values from arrays
+            rsi_data = tool_results.get("compute_rsi", {})
+            rsi_array = rsi_data.get("rsi", [])
+            rsi_val = rsi_array[-1] if rsi_array else None
             
-            if rsi_val:
+            macd_data = tool_results.get("compute_macd", {})
+            macd_array = macd_data.get("macd", [])
+            macd_signal_array = macd_data.get("macd_signal", [])
+            macd_val = macd_array[-1] if macd_array else None
+            macd_signal_val = macd_signal_array[-1] if macd_signal_array else None
+            
+            roc_data = tool_results.get("compute_roc", {})
+            roc_array = roc_data.get("roc", [])
+            roc_val = roc_array[-1] if roc_array else None
+            
+            stoch_data = tool_results.get("compute_stoch", {})
+            stoch_k_array = stoch_data.get("stoch_k", [])
+            stoch_k_val = stoch_k_array[-1] if stoch_k_array else None
+            
+            willr_data = tool_results.get("compute_willr", {})
+            willr_array = willr_data.get("willr", [])
+            willr_val = willr_array[-1] if willr_array else None
+            
+            # Add detailed interpretation
+            if rsi_val is not None:
                 if rsi_val > 70:
                     interpretation += f"RSI={rsi_val:.1f} (overbought). "
                 elif rsi_val < 30:
@@ -299,8 +331,25 @@ def _run_indicator_analysis(
                 else:
                     interpretation += f"RSI={rsi_val:.1f} (neutral). "
             
-            if macd_signal:
-                interpretation += f"MACD signal: {macd_signal}. "
+            if macd_val is not None and macd_signal_val is not None:
+                if macd_val > macd_signal_val:
+                    interpretation += f"MACD={macd_val:.2f} above signal={macd_signal_val:.2f} (bullish). "
+                else:
+                    interpretation += f"MACD={macd_val:.2f} below signal={macd_signal_val:.2f} (bearish). "
+            
+            if roc_val is not None:
+                interpretation += f"ROC={roc_val:.2f}%. "
+            
+            if stoch_k_val is not None:
+                if stoch_k_val > 80:
+                    interpretation += f"Stochastic=%K={stoch_k_val:.1f} (overbought). "
+                elif stoch_k_val < 20:
+                    interpretation += f"Stochastic=%K={stoch_k_val:.1f} (oversold). "
+                else:
+                    interpretation += f"Stochastic=%K={stoch_k_val:.1f}. "
+            
+            if willr_val is not None:
+                interpretation += f"Williams %R={willr_val:.1f}. "
         else:
             interpretation = "Unable to compute indicators - all tool executions failed."
     

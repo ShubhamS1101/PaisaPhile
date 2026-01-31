@@ -227,7 +227,19 @@ def _run_trend_analysis(
                 {"role": "system", "content": system_msg},
                 vision_message
             ])
-            interpretation = response.content if hasattr(response, 'content') else str(response)
+            # Handle both string and list-based content formats
+            if hasattr(response, 'content'):
+                if isinstance(response.content, list):
+                    # New format: [{'type': 'text', 'text': '...'}]
+                    interpretation = "".join(
+                        block.get('text', '') for block in response.content 
+                        if isinstance(block, dict) and block.get('type') == 'text'
+                    )
+                else:
+                    # Old format: simple string
+                    interpretation = response.content
+            else:
+                interpretation = str(response)
         except Exception as e:
             print(f"⚠️ Vision analysis failed: {e}")
             interpretation = "Trend chart generated but vision analysis unavailable."

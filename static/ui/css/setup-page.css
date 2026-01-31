@@ -1,0 +1,588 @@
+/* ================================
+   SETUP PAGE - Full Page Configuration
+   System-level UI, not modal dialog
+================================ */
+
+/* Page Container - Full Viewport, Scrollable */
+.setup-page {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--bg-app);
+    overflow-y: auto;
+    z-index: 1000;
+}
+
+.setup-page.hidden {
+    display: none;
+}
+
+/* ================================
+   TOP HEADER BAR
+================================ */
+.setup-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 10px;
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.setup-header-left {
+    display: flex;
+    align-items: center;
+}
+
+/* Brand Lockup - Bull + Name side by side */
+.setup-header .brand-lockup {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.setup-header .brand-bull {
+    height: 36px;
+    width: auto;
+}
+
+/* Brand text container for name + tagline */
+.setup-header .brand-text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+    margin-top: 4px;
+}
+
+.setup-header .brand-name {
+    height: 18px;
+    width: auto;
+}
+
+.setup-header .brand-tagline {
+    font-size: 10px;
+    font-weight: 400;
+    color: var(--text-tertiary);
+    letter-spacing: 0.3px;
+    line-height: 1;
+}
+
+.setup-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Back Button - Only shown when returning from chat */
+.back-btn {
+    margin-right: 12px;
+}
+
+.back-btn.hidden {
+    display: none;
+}
+
+/* Back button always visible on settings page */
+.back-btn-visible {
+    margin-right: 16px;
+}
+
+/* Header Icon Buttons - Visible in dark mode */
+.header-icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-size: 16px;
+}
+
+.header-icon-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-color: var(--border-hover);
+}
+
+.header-icon-btn:active {
+    transform: scale(0.96);
+}
+
+/* ================================
+   PAGE TITLE SECTION
+================================ */
+.setup-title-section {
+    padding: 40px 32px 24px;
+    text-align: center;
+    background: var(--bg-app);
+}
+
+.setup-title {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 8px;
+    letter-spacing: -0.5px;
+}
+
+.setup-description {
+    font-size: 15px;
+    color: var(--text-secondary);
+    margin: 0;
+    max-width: 500px;
+    margin-left: auto;
+    margin-right: auto;
+    line-height: 1.5;
+}
+
+/* ================================
+   MAIN CONTENT AREA
+================================ */
+.setup-content {
+    padding: 0 32px 32px;
+}
+
+.setup-content-inner {
+    max-width: 720px;
+    margin: 0 auto;
+}
+
+/* ================================
+   CONFIGURATION SECTIONS
+   Settings cards, not dialog panels
+================================ */
+.config-section {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    margin-bottom: 24px;
+    overflow: hidden;
+}
+
+.config-section:last-child {
+    margin-bottom: 0;
+}
+
+/* Section Header */
+.section-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.section-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    background: var(--accent-bg);
+    border-radius: 10px;
+    flex-shrink: 0;
+}
+
+.section-icon i {
+    font-size: 20px;
+    color: var(--accent-color);
+}
+
+.section-info {
+    flex: 1;
+}
+
+.section-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 4px;
+}
+
+.section-subtitle {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+/* Section Specs - Compact info rows */
+.section-specs {
+    padding: 16px 24px;
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.spec-row {
+    display: flex;
+    gap: 8px;
+    font-size: 13px;
+    line-height: 1.5;
+    margin-bottom: 6px;
+}
+
+.spec-row:last-child {
+    margin-bottom: 0;
+}
+
+.spec-label {
+    color: var(--text-tertiary);
+    font-weight: 500;
+    flex-shrink: 0;
+}
+
+.spec-value {
+    color: var(--text-secondary);
+}
+
+/* Section Form */
+.section-form {
+    padding: 24px;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.form-group.full-width {
+    grid-column: 1 / -1;
+}
+
+.form-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.required {
+    color: var(--error-color);
+}
+
+.optional {
+    color: var(--text-tertiary);
+    font-weight: 400;
+}
+
+.form-input,
+.form-select {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 14px;
+    background: var(--bg-app);
+    color: var(--text-primary);
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.form-input::placeholder {
+    color: var(--text-tertiary);
+}
+
+.form-input:focus,
+.form-select:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.form-input.invalid {
+    border-color: var(--error-color);
+}
+
+.form-input.valid {
+    border-color: var(--success-color);
+}
+
+/* Validation Message */
+.validation-message {
+    font-size: 12px;
+    margin-top: 4px;
+    display: none;
+}
+
+.validation-message.show {
+    display: block;
+}
+
+.validation-message.error {
+    color: var(--error-text);
+}
+
+.validation-message.success {
+    color: var(--success-text);
+}
+
+/* ================================
+   FOOTER - Action Bar (End of Content)
+================================ */
+.setup-footer {
+    padding: 40px 32px 60px;
+    background: transparent;
+}
+
+.setup-footer-inner {
+    max-width: 720px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+}
+
+.footer-hint {
+    font-size: 13px;
+    color: var(--text-tertiary);
+    margin: 0;
+}
+
+/* Start Button - Primary CTA */
+.btn-start {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 48px;
+    background: var(--accent-color);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-start:hover {
+    background: var(--accent-hover);
+}
+
+.btn-start:active {
+    transform: scale(0.98);
+}
+
+.btn-start:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-start i {
+    font-size: 14px;
+}
+
+/* ================================
+   RESPONSIVE ADJUSTMENTS
+================================ */
+@media (max-width: 768px) {
+    .setup-header {
+        padding: 12px 20px;
+    }
+    
+    .setup-logo {
+        height: 28px;
+    }
+    
+    .setup-title-section {
+        padding: 32px 20px 20px;
+    }
+    
+    .setup-title {
+        font-size: 24px;
+    }
+    
+    .setup-content {
+        padding: 0 20px 24px;
+    }
+    
+    .section-header {
+        padding: 16px 20px;
+    }
+    
+    .section-icon {
+        width: 40px;
+        height: 40px;
+    }
+    
+    .section-icon i {
+        font-size: 18px;
+    }
+    
+    .section-specs {
+        padding: 14px 20px;
+    }
+    
+    .section-form {
+        padding: 20px;
+    }
+    
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+    
+    .setup-footer {
+        padding: 16px 20px;
+    }
+    
+    .setup-footer-inner {
+        flex-direction: column;
+        text-align: center;
+    }
+    
+    .btn-start {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+@media (max-width: 480px) {
+    .setup-header {
+        padding: 10px 16px;
+    }
+    
+    .header-icon-btn {
+        width: 36px;
+        height: 36px;
+        font-size: 14px;
+    }
+    
+    .setup-title {
+        font-size: 22px;
+    }
+    
+    .setup-description {
+        font-size: 14px;
+    }
+    
+    .section-title {
+        font-size: 15px;
+    }
+    
+    .form-input,
+    .form-select {
+        padding: 10px 12px;
+        font-size: 13px;
+    }
+}
+
+/* ================================
+   HELP PAGE CONTENT STYLES
+================================ */
+.help-content {
+    padding: 16px 20px;
+}
+
+.help-content p {
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+}
+
+.help-content ol,
+.help-content ul {
+    margin: 0;
+    padding-left: 24px;
+}
+
+.help-content li {
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+/* Help Links */
+.help-links {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.help-link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    color: var(--text-primary);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.help-link:hover {
+    background: var(--bg-secondary);
+    border-color: var(--accent-color);
+    transform: translateX(4px);
+}
+
+.help-link i:first-child {
+    font-size: 18px;
+    color: var(--accent-color);
+    width: 24px;
+    text-align: center;
+}
+
+.help-link span {
+    flex: 1;
+}
+
+.help-link i:last-child {
+    font-size: 12px;
+    color: var(--text-tertiary);
+}
+
+/* Keyboard Shortcuts */
+.shortcut-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.shortcut-item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.shortcut-item kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 80px;
+    padding: 6px 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    box-shadow: 0 2px 0 var(--border-color);
+}
+
+.shortcut-item span {
+    font-size: 14px;
+    color: var(--text-secondary);
+}
