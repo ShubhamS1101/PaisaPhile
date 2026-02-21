@@ -1,48 +1,65 @@
-from typing import TypedDict, List, Dict, Optional, Any
+from typing import TypedDict, List, Dict, Optional, Any, Literal
 from typing_extensions import Annotated
 
 
 # ============================================================
-# RAW DATA CONTEXT (WHAT DATA WAS USED)
+# WINDOW SPECIFICATION (WHAT THE PLANNER REQUESTS)
 # ============================================================
 
-class DataContext(TypedDict):
+class WindowSpec(TypedDict, total=False):
     """
-    Defines ONE precise slice of raw market data.
+    Defines ONE analysis window requested by the planner.
+    This is the planner's output — it says WHAT is needed,
+    not whether it exists or is fresh.
     """
-    key: str
-    # "{symbol}|{timeframe}|{start_datetime}:{end_datetime}"
-
     symbol: str
     timeframe: str
-    start_datetime: str      # ISO-8601 with timezone
-    end_datetime: str        # ISO-8601 with timezone
+    horizon: str             # "intraday" | "swing" | "long_term"
+    window_type: str         # "ROLLING" | "HISTORICAL"
+    lookback: str            # e.g. "3y", "6m", "100C" (ROLLING only)
+    start: str               # e.g. "2024-01-01" (HISTORICAL only)
+    end: str                 # e.g. "2024-06-30" (HISTORICAL only)
 
 
 # ============================================================
 # PER-AGENT OUTPUT WITH ORIGIN TIME
 # ============================================================
 
-class AgentOutput(TypedDict):
+class AgentOutput(TypedDict, total=False):
     result: Dict[str, Any]
     created_at: str          # ISO-8601
     fresh_until: Optional[str]
     model_version: str
+    metadata: Dict[str, Any] # Per-component snapshot metadata
+                             # (data_window_start, data_window_end, candles_used, etc.)
 
 
 # ============================================================
-# ANALYSIS RESULT (PER DATA CONTEXT + HORIZON)
+# ANALYSIS RESULT (PER WINDOW)
 # ============================================================
 
 class AnalysisResult(TypedDict, total=False):
     """
-    Persistent analytical memory for ONE:
-    (DataContext + Horizon)
+    Persistent analytical memory for ONE window.
+
+    Window identity is semantic:
+      ROLLING:    "{symbol}|{timeframe}|ROLLING|{horizon}|{lookback}"
+      HISTORICAL: "{symbol}|{timeframe}|HISTORICAL|{start}:{end}|{horizon}"
+
+    Exact data timestamps live INSIDE each component's metadata,
+    NOT in the window key.
     """
 
-    horizon: str
-    # "intraday" | "swing" | "long_term"
+    # Window-level metadata
+    status: str              # "active" | "archive"
+    last_accessed: str       # ISO-8601 — for LRU eviction
 
+    # Fetched data timestamps (set by fetch node after yfinance download)
+    fetched_start: Optional[str]     # First candle timestamp (ISO-8601)
+    fetched_end: Optional[str]       # Last candle timestamp (ISO-8601)
+    candles_fetched: Optional[int]   # Number of candles fetched
+
+    # Per-agent outputs
     indicator: Optional[AgentOutput]
     pattern: Optional[AgentOutput]
     trend: Optional[AgentOutput]
@@ -78,28 +95,29 @@ class TradingAdvisorState(TypedDict):
     ]
 
     # --------------------------------------------------------
-    # What RAW DATA is required this turn
+    # What WINDOWS are needed this turn (planner output)
     # --------------------------------------------------------
 
-    data_contexts_required: Annotated[
-        List[DataContext],
-        "Data slices needed for THIS query only"
+    windows_required: Annotated[
+        List[WindowSpec],
+        "Window specifications requested by planner for THIS query"
     ]
 
     # --------------------------------------------------------
-    # What ANALYSES must run this turn
+    # What ANALYSES must run this turn (resolved by infra)
     # --------------------------------------------------------
 
     analyses_required: Annotated[
         Dict[str, Dict[str, Any]],
         """
-        Maps DataContext.key → execution instructions.
+        Maps window_id → execution instructions.
+        Built by window manager + freshness checker, NOT by planner.
 
         Example:
         {
-          "<data_key>": {
-              "horizon": "intraday",
-              "run": ["indicator", "trend", "decision"]
+          "BEL.NS|1d|ROLLING|long_term|3y": {
+              "run": ["indicator", "decision"],
+              "data_needed": true
           }
         }
         """
@@ -112,9 +130,23 @@ class TradingAdvisorState(TypedDict):
     kline_data: Annotated[
         Dict[str, Dict[str, Any]],
         """
-        Temporary OHLCV data keyed by DataContext.key.
+        Temporary OHLCV data keyed by window_id or data_id.
         Exists ONLY during agent execution.
         Cleared after agents finish.
+        """
+    ]
+
+    # --------------------------------------------------------
+    # Raw data requests (bypass analysis, go to dialogue)
+    # --------------------------------------------------------
+
+    data_required: Annotated[
+        List[Dict[str, str]],
+        """
+        Simple data fetch requests for dialogue (e.g. price_check).
+        Each entry: {"data_id": "AAPL_1d_20260222T...", "symbol": "AAPL", "timeframe": "1d"}
+        data_id format: {symbol}_{timeframe}_{iso_timestamp}
+        Fetched data lands in kline_data[data_id].
         """
     ]
 
@@ -125,10 +157,11 @@ class TradingAdvisorState(TypedDict):
     analysis_store: Annotated[
         Dict[str, AnalysisResult],
         """
-        Persistent cache of ALL analyses.
+        Persistent cache of ALL analysis windows.
 
-        Key format:
-        "{symbol}|{timeframe}|{start}:{end}|{horizon}"
+        Key formats:
+          ROLLING:    "{symbol}|{timeframe}|ROLLING|{horizon}|{lookback}"
+          HISTORICAL: "{symbol}|{timeframe}|HISTORICAL|{start}:{end}|{horizon}"
         """
     ]
 

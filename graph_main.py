@@ -2,18 +2,17 @@
 Main Agentic Trading System Graph
 
 Complete conversational agentic system with:
-- Persistent analysis_store (not flushed until conversation ends)
+- Persistent analysis_store (keyed by ROLLING/HISTORICAL window identities)
 - Per-agent ran_at timestamps for freshness tracking
 - Automatic decision staleness detection
-- Dual data contexts (analyses_required vs data_contexts_required)
 - Sequential agent execution with caching
 
 Architecture:
-1. Planner → determines intent and required analyses
+1. Planner → determines intent and required windows
 2. Validator → ensures all required fields present
-3. Fetcher → fetches data for analyses_required contexts
-4. Agents (indicator/pattern/trend/decision) → run for each data context
-5. Dialogue → generates user-facing response using analysis_store + data_contexts_required
+3. Fetcher → resolves window keys to date ranges, fetches OHLCV data
+4. Agents (indicator/pattern/trend/decision) → run for each window
+5. Dialogue → generates user-facing response using analysis_store
 6. Memory → updates conversation summary
 """
 
@@ -30,17 +29,66 @@ from langgraph.graph import StateGraph, START, END
 
 from agent_state import TradingAdvisorState
 from agents.planner_agent import create_planner_agent, validate_and_route
-from agents.indicator_agent_new import create_indicator_agent
-from agents.pattern_agent_new import create_pattern_agent
-from agents.trend_agent_new import create_trend_agent
-from agents.decision_agent_new import create_decision_agent
+from agents.indicator_agent import create_indicator_agent
+from agents.pattern_agent import create_pattern_agent
+from agents.trend_agent import create_trend_agent
+from agents.decision_agent import create_decision_agent
 from agents.dialogue_agent import create_dialogue_agent
 from agents.conversation_memory import update_conversation_summary
 from decision_freshness import should_run_decision
 
 import yfinance as yf
 import pandas as pd
-from datetime import timedelta
+from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
+
+
+def _resolve_lookback(lookback: str):
+    """
+    Resolve a lookback string to (start_datetime, end_datetime).
+    
+    Supported formats:
+        "4d"  → 4 days back from now
+        "30d" → 30 days back
+        "6m"  → 6 months back
+        "3y"  → 3 years back
+        "100C" → 100 candles (treated as ~100 days for daily; caller adjusts)
+    
+    Returns:
+        (start_dt: datetime, end_dt: datetime)
+    """
+    end_dt = datetime.now()
+    lookback = lookback.strip()
+    
+    match = re.match(r'^(\d+)([dDwWmMyYcC])$', lookback)
+    if not match:
+        # Fallback: try to interpret as days
+        try:
+            days = int(lookback)
+            return (end_dt - timedelta(days=days), end_dt)
+        except ValueError:
+            raise ValueError(f"Cannot parse lookback: {lookback}")
+    
+    value = int(match.group(1))
+    unit = match.group(2).lower()
+    
+    if unit == 'd':
+        start_dt = end_dt - timedelta(days=value)
+    elif unit == 'w':
+        start_dt = end_dt - timedelta(weeks=value)
+    elif unit == 'm':
+        start_dt = end_dt - relativedelta(months=value)
+    elif unit == 'y':
+        start_dt = end_dt - relativedelta(years=value)
+    elif unit == 'c':
+        # Candle count: approximate as trading days (5/7 of calendar days)
+        # Add 50% buffer so yfinance returns enough candles
+        estimated_calendar_days = int(value * 7 / 5 * 1.5)
+        start_dt = end_dt - timedelta(days=estimated_calendar_days)
+    else:
+        raise ValueError(f"Unknown lookback unit: {unit}")
+    
+    return (start_dt, end_dt)
 
 
 class TradingGraphV2:
@@ -69,8 +117,9 @@ class TradingGraphV2:
             
             state.setdefault("kline_data", {})
             state.setdefault("analysis_store", {})
-            state.setdefault("data_contexts_required", [])
+            state.setdefault("windows_required", [])
             state.setdefault("analyses_required", {})
+            state.setdefault("data_required", [])
             state.setdefault("conversation_summary", "")
             state.setdefault("user_preferences", {})
             return state
@@ -78,106 +127,45 @@ class TradingGraphV2:
     
     def _fetch_data_node(self):
         """
-        Fetch OHLCV data for all contexts in analyses_required.
+        Fetch OHLCV data for:
+        1. All windows in analyses_required (for analysis pipeline)
+        2. All items in data_required (raw data for dialogue, e.g. price_check)
         
-        Key insight: We fetch for analyses_required (not data_contexts_required).
-        data_contexts_required are raw slices passed directly to dialogue.
+        Stores fetched_start/fetched_end timestamps in the window entry
+        so agents and freshness logic know the actual data range.
         """
         def node(state: TradingAdvisorState) -> Dict[str, Any]:
+            from analysis_store_util import (
+                parse_window_key,
+                set_window_fetch_timestamps,
+                init_window_entry,
+            )
             analyses_required = state.get("analyses_required", {})
-            data_contexts_required = state.get("data_contexts_required", [])
+            data_required = state.get("data_required", [])
+            analysis_store = state.get("analysis_store", {})
             
-            # Combine both sources for fetching
-            all_contexts_to_fetch = set()
-            
-            # Add from analyses_required
-            for context_key in analyses_required.keys():
-                all_contexts_to_fetch.add(context_key)
-            
-            # Add from data_contexts_required
-            for ctx in data_contexts_required:
-                if ctx.get("key"):
-                    all_contexts_to_fetch.add(ctx["key"])
-            
-            if not all_contexts_to_fetch:
-                return {"kline_data": {}}
+            if not analyses_required and not data_required:
+                return {"kline_data": {}, "analysis_store": analysis_store}
             
             kline_data: Dict[str, Dict[str, Any]] = state.get("kline_data", {})
             
             print(f"\n{'='*60}")
             print(f"FETCHING DATA")
             print(f"{'='*60}")
-            print(f"📋 Contexts to fetch: {len(all_contexts_to_fetch)}")
-            for ctx in all_contexts_to_fetch:
-                print(f"   - {ctx}")
+            print(f"📋 Analysis windows: {len(analyses_required)}")
+            print(f"📋 Data requests: {len(data_required)}")
             
-            for context_key in all_contexts_to_fetch:
-                # Parse context_key: "{symbol}|{timeframe}|{start}:{end}"
-                # Note: datetimes contain colons (e.g., 2026-01-13T10:30:00+05:30)
-                parts = context_key.split("|")
-                if len(parts) != 3:
-                    print(f"  ⚠️ Invalid context_key format: {context_key}")
-                    print(f"     Expected 3 parts, got {len(parts)}")
-                    continue
+            # --- Helper: fetch one symbol/timeframe/date-range into kline_data ---
+            def _do_fetch(key: str, symbol: str, timeframe: str, start_dt, end_dt):
+                """Fetch from yfinance and store in kline_data[key]. Returns candle count or 0."""
+                if key in kline_data and kline_data[key]:
+                    print(f"  ✓ Data cached: {key}")
+                    return len(kline_data[key].get("Datetime", []))
                 
-                symbol = parts[0]
-                timeframe = parts[1]
-                datetime_range = parts[2]
-                
-                print(f"  Parsing: {symbol} | {timeframe}")
-                print(f"  Datetime range: {datetime_range}")
-                
-                # Parse datetime range: "start_iso:end_iso"
-                # ISO datetimes can end with timezone like +05:30 or -08:00 or Z
-                # Strategy: Find the LAST colon that separates two complete ISO timestamps
-                # Split by finding timezone end pattern
-                try:
-                    import re
-                    # Match pattern: (ISO_datetime_with_tz):(ISO_datetime_with_tz)
-                    # The separator colon comes AFTER a complete timezone (+XX:XX or -XX:XX or Z)
-                    # Look for pattern: ...+XX:XX: or ...-XX:XX: (note the extra colon after timezone)
-                    
-                    # Try timezone with +XX:XX or -XX:XX format followed by colon separator
-                    match = re.match(r'^(.+?[+-]\d{2}:\d{2}):(.+?[+-]\d{2}:\d{2})$', datetime_range)
-                    if not match:
-                        # Try Z timezone
-                        match = re.match(r'^(.+?Z):(.+?Z)$', datetime_range)
-                    if not match:
-                        # Try mixed: first has +XX:XX, second has Z
-                        match = re.match(r'^(.+?[+-]\d{2}:\d{2}):(.+?Z)$', datetime_range)
-                    if not match:
-                        # Try mixed: first has Z, second has +XX:XX
-                        match = re.match(r'^(.+?Z):(.+?[+-]\d{2}:\d{2})$', datetime_range)
-                    
-                    if not match:
-                        print(f"  ⚠️ Could not parse datetime range: {datetime_range}")
-                        print(f"     Expected format: YYYY-MM-DDTHH:MM:SS+TZ:TZ:YYYY-MM-DDTHH:MM:SS+TZ:TZ")
-                        continue
-                    
-                    start_datetime = match.group(1)
-                    end_datetime = match.group(2)
-                    
-                except Exception as e:
-                    print(f"  ⚠️ Error parsing datetime range: {e}")
-                    continue
-                
-                # Skip if already fetched
-                if context_key in kline_data and kline_data[context_key]:
-                    print(f"✓ Data cached: {context_key}")
-                    continue
-                
-                print(f"⬇️  Fetching: {symbol}|{timeframe} ({start_datetime[:10]} to {end_datetime[:10]})")
+                print(f"  ⬇️  Fetching: {symbol}|{timeframe} ({start_dt.strftime('%Y-%m-%d')} to {end_dt.strftime('%Y-%m-%d')})")
                 
                 try:
-                    start_dt = pd.to_datetime(start_datetime, errors="coerce")
-                    end_dt = pd.to_datetime(end_datetime, errors="coerce")
-                    
-                    if pd.isna(start_dt) or pd.isna(end_dt):
-                        print(f"  ⚠️ Invalid datetime: {start_datetime} - {end_datetime}")
-                        continue
-                    
-                    # yfinance end is exclusive; pad slightly
-                    fetch_end = end_dt + timedelta(days=1) if end_dt == start_dt else end_dt
+                    fetch_end = end_dt + timedelta(days=1)
                     
                     df = yf.download(
                         tickers=symbol,
@@ -189,46 +177,38 @@ class TradingGraphV2:
                     )
                     
                     if df is None or df.empty:
-                        print(f"  ❌ No data available for {symbol} (possibly delisted or invalid symbol)")
-                        # Store empty marker so agents know fetch was attempted
-                        kline_data[context_key] = None
-                        continue
+                        print(f"  ❌ No data for {symbol}")
+                        kline_data[key] = None
+                        return 0
                     
                     df = df.reset_index()
                     if isinstance(df.columns, pd.MultiIndex):
                         df.columns = df.columns.get_level_values(0)
                     
-                    # Standardize datetime column
                     time_col = "Datetime" if "Datetime" in df.columns else ("Date" if "Date" in df.columns else None)
                     if not time_col:
-                        print(f"  ⚠️ No datetime column")
-                        kline_data[context_key] = None
-                        continue
-                    
+                        kline_data[key] = None
+                        return 0
                     if time_col != "Datetime":
                         df = df.rename(columns={time_col: "Datetime"})
                     
-                    # Ensure required columns
                     required_cols = ["Datetime", "Open", "High", "Low", "Close", "Volume"]
-                    missing_cols = [col for col in required_cols if col not in df.columns]
-                    if missing_cols:
-                        print(f"  ⚠️ Missing columns: {missing_cols}")
-                        if "Volume" in missing_cols:
+                    missing = [c for c in required_cols if c not in df.columns]
+                    if missing:
+                        if missing == ["Volume"]:
                             df["Volume"] = 0
                         else:
-                            kline_data[context_key] = None
-                            continue
+                            kline_data[key] = None
+                            return 0
                     
                     df["Datetime"] = pd.to_datetime(df["Datetime"], errors="coerce")
                     df = df.dropna(subset=["Datetime"])
                     
                     if df.empty:
-                        print(f"  ❌ No valid data after processing")
-                        kline_data[context_key] = None
-                        continue
+                        kline_data[key] = None
+                        return 0
                     
-                    # Store in kline_data with full context_key
-                    kline_data[context_key] = {
+                    kline_data[key] = {
                         "Datetime": df["Datetime"].dt.strftime("%Y-%m-%d %H:%M:%S").tolist(),
                         "Open": df["Open"].astype(float).tolist(),
                         "High": df["High"].astype(float).tolist(),
@@ -238,23 +218,105 @@ class TradingGraphV2:
                     }
                     
                     print(f"  ✓ Fetched {len(df)} candles")
+                    return len(df)
                     
                 except Exception as e:
-                    print(f"  ❌ Error fetching {symbol}: {e}")
-                    kline_data[context_key] = None
+                    print(f"  ❌ Error: {e}")
+                    kline_data[key] = None
+                    return 0
+            
+            # ────────────────────────────────────────────
+            # 1. Fetch for analysis windows
+            # ────────────────────────────────────────────
+            for window_key, spec in analyses_required.items():
+                if not spec.get("data_needed", True):
+                    continue
+                
+                try:
+                    parsed = parse_window_key(window_key)
+                except ValueError:
+                    print(f"  ⚠️ Invalid window key: {window_key}")
+                    continue
+                
+                symbol = parsed["symbol"]
+                timeframe = parsed["timeframe"]
+                wtype = parsed["window_type"]
+                
+                if wtype == "ROLLING":
+                    lookback = parsed.get("lookback", "30d")
+                    start_dt, end_dt = _resolve_lookback(lookback)
+                elif wtype == "HISTORICAL":
+                    start_dt = pd.to_datetime(parsed["start"])
+                    end_dt = pd.to_datetime(parsed["end"])
+                else:
+                    continue
+                
+                count = _do_fetch(window_key, symbol, timeframe, start_dt, end_dt)
+                
+                # Store actual fetched timestamps in the window entry
+                if count > 0 and kline_data.get(window_key):
+                    datetimes = kline_data[window_key]["Datetime"]
+                    set_window_fetch_timestamps(
+                        analysis_store,
+                        window_key,
+                        fetched_start=datetimes[0],
+                        fetched_end=datetimes[-1],
+                        candles_fetched=count,
+                    )
+            
+            # ────────────────────────────────────────────
+            # 2. Fetch for raw data requests (price_check etc.)
+            # ────────────────────────────────────────────
+            for item in data_required:
+                data_id = item.get("data_id", "")
+                symbol = item.get("symbol", "")
+                timeframe = item.get("timeframe", "1d")
+                
+                if not data_id or not symbol:
+                    continue
+                
+                # data_required always fetches recent data (last 5 trading days)
+                start_dt, end_dt = _resolve_lookback("5d")
+                _do_fetch(data_id, symbol, timeframe, start_dt, end_dt)
             
             print(f"{'='*60}\n")
-            return {"kline_data": kline_data}
+            return {"kline_data": kline_data, "analysis_store": analysis_store}
         
         return node
     
+    def _resolve_deps_node(self):
+        """
+        Pre-execution dependency resolution.
+
+        Runs ONCE after fetch and BEFORE any agent.
+        Checks freshness of each agent and cascades staleness
+        through the dependency graph:
+
+            indicator → trend → decision
+            pattern  ──────→ decision
+
+        Modifies analyses_required[window_key]["run"] in-place.
+        """
+        def node(state: TradingAdvisorState) -> Dict[str, Any]:
+            from analysis_store_util import propagate_staleness
+            print(f"\n{'─'*60}")
+            print(f"RESOLVING DEPENDENCIES")
+            print(f"{'─'*60}")
+            propagate_staleness(state)
+            # Show final run lists
+            for wk, sp in state.get("analyses_required", {}).items():
+                print(f"  {wk}: run={sp.get('run', [])}")
+            print(f"{'─'*60}\n")
+            return {"analyses_required": state.get("analyses_required", {})}
+
+        return node
+
     def _dialogue_node(self):
         """
         Dialogue agent runs ONCE per query.
         
         Receives:
         - analysis_store: All analysis results
-        - data_contexts_required: Raw data slices for direct inspection
         
         Returns:
         - Updated state with explanation field (ALWAYS)
@@ -308,7 +370,7 @@ class TradingGraphV2:
         - user_query: Current user input
         - intent: Current query intent
         - need_clarification: Planner flag
-        - data_contexts_required: Data slices for this query
+        - windows_required: Window specs for this query
         - analyses_required: Analysis plan for this query
         - kline_data: Temporary market data
         - user_preferences: (cleared - can be kept if needed)
@@ -320,8 +382,9 @@ class TradingGraphV2:
                 "user_query": None,
                 "intent": "trade",  # Reset to default
                 "need_clarification": False,
-                "data_contexts_required": [],
+                "windows_required": [],
                 "analyses_required": {},
+                "data_required": [],
                 "kline_data": {},
                 "user_preferences": {}  # Clear preferences (or keep if you want persistence)
             }
@@ -345,6 +408,7 @@ class TradingGraphV2:
         graph.add_node("planner", planner_node)
         graph.add_node("validator", validate_and_route)
         graph.add_node("fetch", self._fetch_data_node())
+        graph.add_node("resolve_deps", self._resolve_deps_node())
         graph.add_node("indicator", indicator_agent)
         graph.add_node("pattern", pattern_agent)
         graph.add_node("trend", trend_agent)
@@ -369,12 +433,14 @@ class TradingGraphV2:
             print(f"   Has explanation: {bool(has_explanation)}")
             print(f"   Analyses required: {len(analyses_required)} contexts")
             
+            data_required = state.get("data_required", [])
+            
             if intent == "clarify" and has_explanation:
-                print(f"   → Routing to DIALOGUE (clarification needed)")
+                print(f"   \u2192 Routing to DIALOGUE (clarification needed)")
                 return "dialogue"
             
-            if analyses_required:
-                print(f"   → Routing to FETCH (will fetch {len(analyses_required)} contexts)")
+            if analyses_required or data_required:
+                print(f"   \u2192 Routing to FETCH ({len(analyses_required)} windows + {len(data_required)} data requests)")
                 return "fetch"
             
             print(f"   → Routing to DIALOGUE (no analyses required)")
@@ -382,20 +448,26 @@ class TradingGraphV2:
         
         def route_after_fetch(state: Dict[str, Any]) -> str:
             """
-            Check if any data was successfully fetched.
-            If all fetches failed (all values are None), skip to dialogue with error.
+            After fetch, decide whether to run analysis agents or skip to dialogue.
+            - If analyses_required has items: go to analysis pipeline
+            - If only data_required (price_check): skip straight to dialogue
+            - If all fetches failed: skip to dialogue with error
             """
             kline_data = state.get("kline_data", {})
+            analyses_required = state.get("analyses_required", {})
+            
+            # If no analysis windows, skip to dialogue (data_required only)
+            if not analyses_required:
+                print("   \u2192 Data-only request, skipping to DIALOGUE")
+                return "dialogue"
             
             # Check if we have any valid data
             has_valid_data = any(data is not None for data in kline_data.values())
             
             if not has_valid_data and kline_data:
-                # All fetches failed - skip analysis and go to dialogue with error
-                print("⚠️  All data fetches failed - skipping analysis agents")
+                print("\u26a0\ufe0f  All data fetches failed - skipping analysis agents")
                 return "dialogue"
             
-            # At least some data is available, proceed to analysis
             return "indicator"
         
         # Main flow
@@ -417,8 +489,9 @@ class TradingGraphV2:
         graph.add_conditional_edges(
             "fetch",
             route_after_fetch,
-            {"indicator": "indicator", "dialogue": "dialogue"}
+            {"indicator": "resolve_deps", "dialogue": "dialogue"}
         )
+        graph.add_edge("resolve_deps", "indicator")
         graph.add_edge("indicator", "pattern")
         graph.add_edge("pattern", "trend")
         graph.add_edge("trend", "decision")

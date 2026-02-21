@@ -30,7 +30,7 @@ def create_initial_state(query: str) -> dict:
         # Planner outputs (will be populated)
         "intent": "",
         "need_clarification": False,
-        "data_contexts_required": [],
+        "windows_required": [],
         "analyses_required": {},
         
         # System fields

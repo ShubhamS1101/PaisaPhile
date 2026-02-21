@@ -164,7 +164,7 @@ def main():
             state.pop("symbols", None)
             state.pop("horizon", None)
             state.pop("analyses_required", None)
-            state.pop("data_contexts_required", None)
+            state.pop("windows_required", None)
             
             # Invoke graph
             print(f"🔄 Processing: \"{user_input}\"\n")

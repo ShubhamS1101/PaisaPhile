@@ -458,7 +458,7 @@ def chat():
             "explanation": None,
             "intent": None,
             "analyses_required": {},
-            "data_contexts_required": [],
+            "windows_required": [],
         }
         
         # Run the trading graph (same as test_interactive)
@@ -506,14 +506,16 @@ def chat():
         # Extract charts directly from analysis_store - agents remove themselves from "run" list after executing
         # So we check the store directly for pattern/trend agents with chart_path
         for store_key, entry in analysis_store.items():
-            # Parse store key: "symbol|timeframe|datetime_range|horizon"
-            parts = store_key.split("|")
-            if len(parts) != 4:
+            # Parse store key using new window key format
+            try:
+                from analysis_store_util import parse_window_key
+                parsed = parse_window_key(store_key)
+                symbol = parsed["symbol"]
+                timeframe = parsed["timeframe"]
+                horizon = parsed.get("horizon", "")
+            except (ValueError, ImportError):
+                # Fallback: skip unrecognized keys
                 continue
-            
-            symbol = parts[0]
-            timeframe = parts[1]
-            horizon = parts[3]
             
             print(f"\n   Checking store entry: {store_key}")
             print(f"   Available agents: {list(entry.keys())}")

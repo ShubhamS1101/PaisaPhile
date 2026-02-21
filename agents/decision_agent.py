@@ -6,7 +6,7 @@ STRICT RULES:
 - NEVER produces conversational text
 - NEVER talks to user
 - NEVER recomputes analysis
-- Reads ONLY: analysis_store, data_contexts_required, intent
+- Reads ONLY: analysis_store, intent
 - Produces ONLY structured JSON decision
 - Decision is immutable for the current turn
 """
@@ -18,7 +18,7 @@ from typing import Any, Dict, List
 from analysis_store_util import (
     decision_is_stale,
     get_filtered_analysis_store,
-    make_analysis_store_key,
+    parse_window_key,
     store_agent_output,
 )
 from freshness_config import get_current_time_iso
@@ -120,7 +120,7 @@ def format_analysis_for_decision(filtered_store: Dict[str, Dict[str, Any]]) -> D
     Format analysis_store entries into structured summary for decision agent.
     
     Args:
-        filtered_store: Dict of {key: analysis_entry}
+        filtered_store: Dict of {window_key: analysis_entry}
         
     Returns:
         Dict with formatted analysis summary and metadata
@@ -129,8 +129,13 @@ def format_analysis_for_decision(filtered_store: Dict[str, Dict[str, Any]]) -> D
     contexts = []
     
     for key, entry in filtered_store.items():
-        symbol = entry.get("symbol", "Unknown")
-        timeframe = entry.get("timeframe", "Unknown")
+        try:
+            parsed = parse_window_key(key)
+            symbol = parsed["symbol"]
+            timeframe = parsed["timeframe"]
+        except (ValueError, KeyError):
+            symbol = "Unknown"
+            timeframe = "Unknown"
         contexts.append(key)
         
         analysis_parts.append(f"\n{'='*60}")
@@ -208,37 +213,20 @@ def generate_decision(state: Dict[str, Any], llm) -> Dict[str, Any]:
 
     last_decision_result = None
 
-    # Process each DataContext.key (no horizon), convert to store_key with horizon
-    for ctx_key, spec in analyses_required.items():
-        horizon = spec.get("horizon")
-        if not horizon:
+    # Process each window
+    for window_key, spec in analyses_required.items():
+        # Parse window key to get symbol/timeframe/horizon
+        try:
+            parsed = parse_window_key(window_key)
+        except ValueError:
             continue
 
-        # ctx_key: "{symbol}|{timeframe}|{start}:{end}"
-        parts = ctx_key.split("|")
-        if len(parts) != 3:
-            continue
-        symbol = parts[0]
-        timeframe = parts[1]
-        datetime_range = parts[2]
-        
-        # Parse datetime range with timezone-aware regex
-        import re
-        match = re.match(r'^(.+?[+-]\d{2}:\d{2}):(.+)$', datetime_range)
-        if not match:
-            match = re.match(r'^(.+?Z):(.+)$', datetime_range)
-        if not match:
-            continue
-        start_datetime = match.group(1)
-        end_datetime = match.group(2)
+        symbol = parsed["symbol"]
+        timeframe = parsed["timeframe"]
+        horizon = parsed["horizon"]
 
-        store_key = make_analysis_store_key(
-            symbol=symbol,
-            timeframe=timeframe,
-            start_datetime=start_datetime,
-            end_datetime=end_datetime,
-            horizon=horizon,
-        )
+        # store_key IS window_key in the new model
+        store_key = window_key
 
         planner_requested = "decision" in spec.get("run", [])
         stale = decision_is_stale(store_key, analysis_store)
@@ -291,7 +279,7 @@ def generate_decision(state: Dict[str, Any], llm) -> Dict[str, Any]:
         # Build decision prompt
         prompt = DECISION_AGENT_PROMPT.format(
             analysis_summary=formatted["analysis_summary"],
-            contexts_used=ctx_key,
+            contexts_used=window_key,
             intent=intent
         )
         
@@ -319,7 +307,7 @@ def generate_decision(state: Dict[str, Any], llm) -> Dict[str, Any]:
                     "decision": decision,
                     "confidence": decision_data.get("confidence", 0),
                     "decision_type": decision_data.get("decision_type", "neutral"),
-                    "contexts_used": [ctx_key],
+                    "contexts_used": [window_key],
                     "reasoning": decision_data.get("reasoning", {}),
                     "risk_notes": decision_data.get("risk_notes", "")
                 }

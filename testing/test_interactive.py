@@ -164,7 +164,7 @@ def main():
             state.pop("symbols", None)
             state.pop("horizon", None)
             state.pop("analyses_required", None)
-            state.pop("data_contexts_required", None)
+            state.pop("windows_required", None)
             
             # Invoke graph
             print(f"🔄 Processing: \"{user_input}\"\n")
@@ -196,44 +196,37 @@ def main():
             
             if analyses_required and analysis_store:
                 charts_found = False
-                for ctx_key, spec in analyses_required.items():
-                    # Build store key with horizon
-                    parts = ctx_key.split("|")
-                    if len(parts) == 3:
-                        symbol = parts[0]
-                        timeframe = parts[1]
-                        datetime_range = parts[2]
-                        horizon = spec.get("horizon", "")
-                        
-                        if horizon:
-                            store_key = f"{symbol}|{timeframe}|{datetime_range}|{horizon}"
-                            entry = analysis_store.get(store_key, {})
-                            
-                            # Check for pattern chart
-                            if "pattern" in spec.get("run", []):
-                                pattern_output = entry.get("pattern", {})
-                                if pattern_output:
-                                    pattern_result = pattern_output.get("result", {})
-                                    chart_path = pattern_result.get("chart_path", "")
-                                    if chart_path and os.path.exists(chart_path):
-                                        if not charts_found:
-                                            print("\n📊 GENERATED CHARTS:")
-                                            print("─" * 80)
-                                            charts_found = True
-                                        print(f"📈 Pattern Chart: {chart_path}")
-                            
-                            # Check for trend chart
-                            if "trend" in spec.get("run", []):
-                                trend_output = entry.get("trend", {})
-                                if trend_output:
-                                    trend_result = trend_output.get("result", {})
-                                    chart_path = trend_result.get("chart_path", "")
-                                    if chart_path and os.path.exists(chart_path):
-                                        if not charts_found:
-                                            print("\n📊 GENERATED CHARTS:")
-                                            print("─" * 80)
-                                            charts_found = True
-                                        print(f"📉 Trend Chart: {chart_path}")
+                for window_key, spec in analyses_required.items():
+                    # Window key IS the store key now
+                    entry = analysis_store.get(window_key, {})
+                    if not entry:
+                        continue
+                    
+                    # Check for pattern chart
+                    if "pattern" in spec.get("run", []):
+                        pattern_output = entry.get("pattern", {})
+                        if pattern_output:
+                            pattern_result = pattern_output.get("result", {})
+                            chart_path = pattern_result.get("chart_path", "")
+                            if chart_path and os.path.exists(chart_path):
+                                if not charts_found:
+                                    print("\n\U0001f4ca GENERATED CHARTS:")
+                                    print("\u2500" * 80)
+                                    charts_found = True
+                                print(f"\U0001f4c8 Pattern Chart: {chart_path}")
+                    
+                    # Check for trend chart
+                    if "trend" in spec.get("run", []):
+                        trend_output = entry.get("trend", {})
+                        if trend_output:
+                            trend_result = trend_output.get("result", {})
+                            chart_path = trend_result.get("chart_path", "")
+                            if chart_path and os.path.exists(chart_path):
+                                if not charts_found:
+                                    print("\n\U0001f4ca GENERATED CHARTS:")
+                                    print("\u2500" * 80)
+                                    charts_found = True
+                                print(f"\U0001f4c9 Trend Chart: {chart_path}")
                 
                 if charts_found:
                     print("─" * 80 + "\n")
