@@ -19,8 +19,9 @@ from langchain_core.messages import ToolMessage, HumanMessage, SystemMessage
 
 from analysis_store_util import (
     calculate_trend_freshness,
+    force_dependents_to_run,
     is_agent_output_fresh,
-    make_analysis_store_key,
+    parse_window_key,
     store_agent_output,
 )
 from freshness_config import get_current_time_iso, parse_iso_datetime
@@ -41,43 +42,25 @@ def create_trend_agent(tool_llm, graph_llm, toolkit):
         kline_data = state.get("kline_data", {})
         ensure_chart_dirs()
         
-        # Process each data context
-        for context_key, spec in analyses_required.items():
-            # Check if trend is required for this context
+        # Process each window
+        for window_key, spec in analyses_required.items():
+            # Check if trend is required for this window
             if "trend" not in spec.get("run", []):
                 continue
 
-            horizon = spec.get("horizon")
-            if not horizon:
+            # Parse window key to get symbol/timeframe/horizon
+            try:
+                parsed = parse_window_key(window_key)
+            except ValueError:
                 spec["run"].remove("trend")
                 continue
 
-            parts = context_key.split("|")
-            if len(parts) != 3:
-                spec["run"].remove("trend")
-                continue
-            symbol = parts[0]
-            timeframe = parts[1]
-            datetime_range = parts[2]
-            
-            # Parse datetime range with timezone-aware regex
-            import re
-            match = re.match(r'^(.+?[+-]\d{2}:\d{2}):(.+)$', datetime_range)
-            if not match:
-                match = re.match(r'^(.+?Z):(.+)$', datetime_range)
-            if not match:
-                spec["run"].remove("trend")
-                continue
-            start_datetime = match.group(1)
-            end_datetime = match.group(2)
+            symbol = parsed["symbol"]
+            timeframe = parsed["timeframe"]
+            horizon = parsed["horizon"]
 
-            store_key = make_analysis_store_key(
-                symbol=symbol,
-                timeframe=timeframe,
-                start_datetime=start_datetime,
-                end_datetime=end_datetime,
-                horizon=horizon,
-            )
+            # store_key IS window_key in the new model
+            store_key = window_key
             
             # Get current time
             current_time = get_current_time_iso()
@@ -92,12 +75,17 @@ def create_trend_agent(tool_llm, graph_llm, toolkit):
             # CACHE MISS or STALE - Run trend analysis
             print(f"🔄 Running trend analysis for {symbol}|{timeframe}|{horizon}")
             
-            # Get kline data for this context
-            context_kline_data = kline_data.get(context_key, {})
+            # Get kline data for this window
+            context_kline_data = kline_data.get(window_key, {})
             if not context_kline_data:
-                print(f"⚠️ No kline data available for {context_key}")
+                print(f"⚠️ No kline data available for {window_key}")
                 spec["run"].remove("trend")
                 continue
+            
+            # Extract actual start/end from fetched kline data
+            datetimes = context_kline_data.get("Datetime", [])
+            start_datetime = datetimes[0] if datetimes else ""
+            end_datetime = datetimes[-1] if datetimes else ""
             
             # Run trend analysis
             trend_result = _run_trend_analysis(
@@ -142,6 +130,9 @@ def create_trend_agent(tool_llm, graph_llm, toolkit):
             )
             
             print(f"💾 Stored trend analysis (fresh until {fresh_until})")
+            
+            # Cascade: trend recomputed → force decision to rerun
+            force_dependents_to_run(state, window_key, "trend")
             
             # Remove from run list
             spec["run"].remove("trend")

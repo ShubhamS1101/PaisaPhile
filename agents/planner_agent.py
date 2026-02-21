@@ -72,11 +72,12 @@ WHAT YOU CONTROL (PLANNER AUTHORITY)
 You decide:
 - intent
 - whether clarification is needed
-- which RAW DATA slices (if any) are required for DIALOGUE ONLY
+- which WINDOWS are required (symbol, timeframe, horizon, lookback/date range)
 - which analyses must run and in what order
 - semantic horizon (intraday | swing | long_term)
 - timeframe (data resolution)
-- start_datetime and end_datetime (ISO-8601, timezone aware)
+- window_type (ROLLING or HISTORICAL)
+- lookback duration (for ROLLING) or start/end dates (for HISTORICAL)
 
 You do NOT see cached data.
 You do NOT know previous analysis results.
@@ -95,43 +96,62 @@ You MUST use this as the reference for all datetime calculations.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 OUTPUT JSON SCHEMA (STRICT)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-{
+{{
   "intent": "<intent_type>",
   "need_clarification": <true|false>,
 
-  "data_contexts_required": [
-    {
-      "key": "<symbol>|<timeframe>|<start_datetime>:<end_datetime>",
-      "symbol": "<symbol>",
+  "windows_required": [
+    {{
+      "symbol": "<ticker>",
       "timeframe": "<timeframe>",
-      "start_datetime": "<ISO-8601 datetime>",
-      "end_datetime": "<ISO-8601 datetime>"
-    }
+      "horizon": "<intraday|swing|long_term>",
+      "window_type": "<ROLLING|HISTORICAL>",
+      "lookback": "<duration, e.g. 4d, 6m, 3y, 100C>",
+      "start": "<YYYY-MM-DD, HISTORICAL only>",
+      "end": "<YYYY-MM-DD, HISTORICAL only>",
+      "run": ["indicator", "pattern", "trend", "decision"]
+    }}
   ],
 
-  "analyses_required": {
-    "<data_context_key>": {
-      "horizon": "<intraday|swing|long_term>",
-            "run": ["indicator", "pattern", "trend", "decision"]
-    }
-  },
-
   "clarification_question": "<string|null>"
-}
+}}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CRITICAL RULE FOR analyses_required:
+WINDOW TYPE RULES:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-The keys in analyses_required MUST be actual data context keys in format:
-"<symbol>|<timeframe>|<start_datetime>:<end_datetime>"
+ROLLING windows (default):
+- Use for "now", "today", "current", "recent", "last N days"
+- Require "lookback" (e.g. "4d", "30d", "6m", "3y", "100C")
+- Do NOT include "start" or "end"
+- The system resolves actual dates at fetch time
 
-NEVER use placeholder keys like "INTENT_ANALYSIS" or "ANALYSIS_1".
-Each key must be a fully formed context key that the system can parse.
+HISTORICAL windows:
+- Use ONLY when user specifies an exact date range
+- Require "start" and "end" as YYYY-MM-DD
+- Do NOT include "lookback"
 
-For trade/trend/compare intents that need analysis:
-1. Determine symbol, timeframe, and datetime range
-2. Form the context key: "AAPL|5m|2026-01-20T09:15:00+05:30:2026-01-20T15:30:00+05:30"
-3. Use that EXACT key in analyses_required
+If in doubt, use ROLLING.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LOOKBACK RULES BY TIMEFRAME:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1m  → max lookback: "4d"
+5m  → max lookback: "30d"
+15m → max lookback: "60d"
+1h  → max lookback: "90d"
+4h  → max lookback: "1y"
+1d  → max lookback: "10y"
+1w  → max lookback: "10y"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CRITICAL RULES FOR windows_required:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- NEVER use placeholder keys like "INTENT_ANALYSIS" or "ANALYSIS_1"
+- Each window MUST have symbol, timeframe, horizon, and window_type
+- ROLLING windows MUST have lookback
+- HISTORICAL windows MUST have start and end
+- For price_check intent: set run to [] (empty list) — data only
+- For explain intent: windows_required MUST be empty []
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EXAMPLES
@@ -139,89 +159,101 @@ EXAMPLES
 
 Example 1: Trade query with full analysis
 Query: "Should I buy BEL.NS for intraday?"
-CURRENT_DATETIME: "2026-01-20T14:30:00+05:30"
 
-{
+{{
   "intent": "trade",
   "need_clarification": false,
-  "data_contexts_required": [],
-  "analyses_required": {
-    "BEL.NS|5m|2026-01-20T09:15:00+05:30:2026-01-20T14:30:00+05:30": {
+  "windows_required": [
+    {{
+      "symbol": "BEL.NS",
+      "timeframe": "5m",
       "horizon": "intraday",
+      "window_type": "ROLLING",
+      "lookback": "4d",
       "run": ["indicator", "pattern", "trend", "decision"]
-    }
-  },
+    }}
+  ],
   "clarification_question": null
-}
+}}
 
 Example 2: Price check query
 Query: "What's the current price of AAPL?"
-CURRENT_DATETIME: "2026-01-20T14:30:00+05:30"
 
-{
+{{
   "intent": "price_check",
   "need_clarification": false,
-  "data_contexts_required": [
-    {
-      "key": "AAPL|1d|2026-01-19T09:30:00+05:30:2026-01-20T14:30:00+05:30",
+  "windows_required": [
+    {{
       "symbol": "AAPL",
       "timeframe": "1d",
-      "start_datetime": "2026-01-19T09:30:00+05:30",
-      "end_datetime": "2026-01-20T14:30:00+05:30"
-    }
+      "horizon": "intraday",
+      "window_type": "ROLLING",
+      "lookback": "2d",
+      "run": []
+    }}
   ],
-  "analyses_required": {},
   "clarification_question": null
-}
+}}
 
 Example 3: General greeting
 Query: "hi"
 
-{
+{{
   "intent": "clarify",
   "need_clarification": true,
-  "data_contexts_required": [],
-  "analyses_required": {},
+  "windows_required": [],
   "clarification_question": "Hello! How can I assist you with your trading today? You can ask me about buy/sell recommendations, market trends, price checks, or explanations of technical indicators."
-}
+}}
 
 Example 4: Follow-up question about existing analysis
 Query: "what is the RSI of it?"
-CURRENT_DATETIME: "2026-01-20T14:32:00+05:30"
 CONVERSATION_SUMMARY: "User asked for BEL.NS intraday analysis. System provided HOLD recommendation."
 
-{
+{{
   "intent": "explain",
   "need_clarification": false,
-  "data_contexts_required": [],
-  "analyses_required": {},
+  "windows_required": [],
   "clarification_question": null
-}
+}}
 
-Example 5: Follow-up asking for specific indicator value
-Query: "now just tell me the RSI of it?"
-CURRENT_DATETIME: "2026-01-28T12:20:26+05:30"
-CONVERSATION_SUMMARY: "Previous query analyzed BEL.NS for long-term. Computed indicators and trend."
+Example 5: Historical analysis
+Query: "Analyze AAPL from Jan to June 2024"
 
-{
-  "intent": "explain",
+{{
+  "intent": "trade",
   "need_clarification": false,
-  "data_contexts_required": [],
-  "analyses_required": {},
+  "windows_required": [
+    {{
+      "symbol": "AAPL",
+      "timeframe": "1d",
+      "horizon": "long_term",
+      "window_type": "HISTORICAL",
+      "start": "2024-01-01",
+      "end": "2024-06-30",
+      "run": ["indicator", "trend", "decision"]
+    }}
+  ],
   "clarification_question": null
-}
+}}
 
-Example 6: Follow-up with pronoun reference
-Query: "why did you recommend that?"
-CONVERSATION_SUMMARY: "Recommended HOLD for AAPL based on conflicting signals."
+Example 6: Long-term swing analysis
+Query: "How is INFY for swing trading?"
 
-{
-  "intent": "explain",
+{{
+  "intent": "trade",
   "need_clarification": false,
-  "data_contexts_required": [],
-  "analyses_required": {},
+  "windows_required": [
+    {{
+      "symbol": "INFY.NS",
+      "timeframe": "1d",
+      "horizon": "swing",
+      "window_type": "ROLLING",
+      "lookback": "90d",
+      "run": ["indicator", "trend", "decision"]
+    }}
+  ],
   "clarification_question": null
-}
+}}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 INTENT DEFINITIONS (MANDATORY)
@@ -263,7 +295,7 @@ Use intent = "explain" when the query:
 CRITICAL RULE FOR FOLLOW-UP QUESTIONS:
 If the query uses "it", "that", or other pronouns referring to previously analyzed assets,
 AND does not introduce a new symbol or explicitly request re-analysis,
-ALWAYS use intent = "explain" with NO data_contexts_required and NO analyses_required.
+ALWAYS use intent = "explain" with NO windows_required and NO analyses_required.
 The dialogue agent will use cached analysis from conversation context.
 
 Use intent = "trade" / "trend" / "compare" ONLY when:
@@ -286,47 +318,43 @@ Examples of NEW ANALYSIS intent:
 - "should I buy MSFT?" (new symbol with trade question)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DATA CONTEXT SEMANTICS (EXTREMELY IMPORTANT)
+WINDOW SEMANTICS (EXTREMELY IMPORTANT)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-A DataContext represents a RAW MARKET DATA SLICE that will be
-PASSED DIRECTLY AS CONTEXT TO THE DIALOGUE AGENT ONLY.
+A window represents a SEMANTIC analysis slot, NOT an exact data slice.
 
-DataContexts are NOT for indicator, pattern, or trend agents.
-Those agents operate on internally fetched and cached system data.
+ROLLING windows (the default):
+- Represent "latest N units" relative to current time
+- Their identity is stable across queries (no timestamps in key)
+- Example: "BEL.NS|1d|ROLLING|long_term|3y" is ALWAYS the same slot
+- The system resolves actual date ranges at fetch time
 
-Create DataContexts ONLY if the dialogue agent needs:
-- raw OHLCV values
-- direct price inspection
-- historical price answers
-- reasoning grounded in price movement
-- factual price explanations
+HISTORICAL windows:
+- Represent a pinned date range the user explicitly asked about
+- Example: "AAPL|1d|HISTORICAL|2024-01-01:2024-06-30|long_term"
 
-DO NOT create DataContexts for:
-- indicator computation
-- pattern detection
-- trend structure
-- decision synthesis
-
-If dialogue does NOT require raw market data:
-→ data_contexts_required MUST be an empty list
+For price_check/explain intents:
+- price_check: use a ROLLING window with run: [] (data only, no analysis)
+- explain: windows_required MUST be empty (uses cached data)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DATA CONTEXT REQUIREMENTS (STRICT)
+WINDOW REQUIREMENTS (STRICT)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Each DataContext MUST include:
+Each window MUST include:
 - symbol
 - timeframe
-- start_datetime
-- end_datetime
+- horizon (intraday | swing | long_term)
+- window_type (ROLLING | HISTORICAL)
 
-ALL datetimes MUST:
-- be ISO-8601
-- include timezone (Asia/Kolkata)
-- use CURRENT_DATETIME as reference
+ROLLING additionally requires:
+- lookback (e.g. "4d", "30d", "6m", "3y")
+
+HISTORICAL additionally requires:
+- start (YYYY-MM-DD)
+- end (YYYY-MM-DD)
 
 If ANY of these cannot be determined:
 → need_clarification = true
-→ data_contexts_required MUST be empty
+→ windows_required MUST be empty
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TIMEFRAME RULES (YAHOO FINANCE SAFE)
@@ -350,30 +378,29 @@ Horizon represents user INTENT, not data resolution.
 DO NOT auto-infer horizon from timeframe.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DATE & TIME RULES (NO AMBIGUITY)
+DATE & TIME RULES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-You MUST compute start_datetime and end_datetime when DataContext is needed.
+For ROLLING windows, you do NOT compute exact datetimes.
+Instead, specify a lookback duration. The system resolves dates.
 
 Rules:
-1. If user says "now", "today", "current":
-   - end_datetime = CURRENT_DATETIME
-   - start_datetime depends on timeframe:
-     - 5m / 15m / 1h / 4h → same trading day market hours
-     - 1d → 30 days before CURRENT_DATETIME
-     - 1w → 90 days before CURRENT_DATETIME
-     - 1mo → 365 days before CURRENT_DATETIME
+1. If user says "now", "today", "current", "recent":
+   Use ROLLING with appropriate lookback for the timeframe
+   5m/15m/1h: lookback = "4d" to "30d"
+   1d: lookback = "30d" to "1y" depending on horizon
+   1w: lookback = "90d" to "2y"
 
-2. If user specifies a single date:
-   - Use that date’s market hours
+2. If user says "last 3 months", "past year":
+   Use ROLLING with lookback = "3m" or "1y"
 
-3. If user specifies a date range:
-   - Use exactly what is provided
+3. If user specifies exact dates ("from Jan 1 to June 30 2024"):
+   Use HISTORICAL with start/end as YYYY-MM-DD
 
 4. If intent = "explain":
-   - data_contexts_required MUST be EMPTY
-     unless raw price inspection is explicitly requested
+   windows_required MUST be EMPTY (use cached analysis)
 
-NEVER leave datetimes null if DataContext is created.
+NEVER leave lookback empty for ROLLING windows.
+NEVER leave start/end empty for HISTORICAL windows.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ANALYSIS AGENT ROLES (STRICT SEPARATION)
@@ -435,7 +462,7 @@ If ANY of these are missing:
 Then:
 - need_clarification = true
 - clarification_question MUST be specific
-- data_contexts_required MUST be empty
+- windows_required MUST be empty
 - analyses_required MUST be empty
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -560,74 +587,35 @@ CURRENT_TIME: {current_time} IST
             }
 
         # --------------------------------------------------
-        # 4. Planner output → state update WITH new structure
+        # 4. Planner output → state update WITH new window model
         # --------------------------------------------------
+        from analysis_store_util import make_window_key
+
         updated_state = {**state}
 
         updated_state["intent"] = planner_output.get("intent", "clarify")
         
-        # NEW: Extract data_contexts_required (list of DataContext objects)
-        data_contexts_required = planner_output.get("data_contexts_required", [])
-        updated_state["data_contexts_required"] = data_contexts_required
+        # Extract windows_required (list of WindowSpec dicts from LLM)
+        windows_required = planner_output.get("windows_required", [])
+        updated_state["windows_required"] = windows_required
         
-        # NEW: Extract analyses_required (dict mapping context key → analysis spec)
-        analyses_required = planner_output.get("analyses_required", {})
+        # Build analyses_required from windows_required
+        # Each WindowSpec → window_key → {run: [...], data_needed: true}
+        analyses_required = {}
+        for spec in windows_required:
+            try:
+                window_key = make_window_key(spec)
+                run_list = spec.get("run", [])
+                # Strip "dialogue" from per-window run lists
+                run_list = [a for a in run_list if a != "dialogue"]
+                analyses_required[window_key] = {
+                    "run": run_list,
+                    "data_needed": True,
+                }
+            except (KeyError, ValueError) as e:
+                print(f"⚠️  Invalid window spec from planner: {spec} ({e})")
+                continue
         
-        # CRITICAL FIX: Ensure keys in analyses_required match data_contexts_required format
-        # LLM may provide shortened keys - we must reconstruct full context keys
-        if analyses_required and data_contexts_required:
-            fixed_analyses_required = {}
-            
-            # Build lookup tables
-            symbol_to_full_key = {}
-            symbol_timeframe_to_full_key = {}
-            
-            for ctx in data_contexts_required:
-                full_key = ctx.get("key", "")
-                symbol = ctx.get("symbol", "")
-                timeframe = ctx.get("timeframe", "")
-                
-                if not full_key or not symbol:
-                    continue
-                
-                # Map symbol -> full key
-                symbol_to_full_key[symbol] = full_key
-                
-                # Map symbol|timeframe -> full key
-                if timeframe:
-                    short_key = f"{symbol}|{timeframe}"
-                    symbol_timeframe_to_full_key[short_key] = full_key
-            
-            # Fix analyses_required keys
-            for key, spec in analyses_required.items():
-                matched_key = None
-                
-                # Try exact match first
-                if key in [ctx.get("key") for ctx in data_contexts_required]:
-                    matched_key = key
-                # Try symbol|timeframe match
-                elif key in symbol_timeframe_to_full_key:
-                    matched_key = symbol_timeframe_to_full_key[key]
-                # Try symbol-only match
-                elif key in symbol_to_full_key:
-                    matched_key = symbol_to_full_key[key]
-                else:
-                    # Key format not recognized - skip it
-                    print(f"⚠️  Planner provided invalid key format: {key} (skipping)")
-                    continue
-                
-                fixed_analyses_required[matched_key] = spec
-            
-            analyses_required = fixed_analyses_required
-        
-        # Enforce: dialogue is NOT a per-context analysis
-        if isinstance(analyses_required, dict):
-            for _, spec in analyses_required.items():
-                if not isinstance(spec, dict):
-                    continue
-                run_list = spec.get("run")
-                if isinstance(run_list, list) and "dialogue" in run_list:
-                    spec["run"] = [a for a in run_list if a != "dialogue"]
         updated_state["analyses_required"] = analyses_required
 
         need_clarification = planner_output.get("need_clarification", False)
@@ -639,7 +627,7 @@ CURRENT_TIME: {current_time} IST
                 "Could you provide more details?"
             )
             # Ensure no execution happens
-            updated_state["data_contexts_required"] = []
+            updated_state["windows_required"] = []
             updated_state["analyses_required"] = {}
 
         # --------------------------------------------------
@@ -650,12 +638,17 @@ CURRENT_TIME: {current_time} IST
         print("=" * 60)
         print(f"Query               : {user_query}")
         print(f"Intent              : {updated_state['intent']}")
-        print(f"Data Contexts       : {len(data_contexts_required)} contexts")
-        for ctx in data_contexts_required:
-            print(f"  - {ctx.get('key', 'N/A')}")
-        print(f"Analyses Required   : {len(analyses_required)} context mappings")
+        print(f"Windows Required    : {len(windows_required)} windows")
+        for spec in windows_required:
+            wtype = spec.get("window_type", "?")
+            sym = spec.get("symbol", "?")
+            tf = spec.get("timeframe", "?")
+            hz = spec.get("horizon", "?")
+            lb = spec.get("lookback", "")
+            run = spec.get("run", [])
+            print(f"  - {sym}|{tf}|{wtype}|{hz} (lookback={lb}) → {run}")
+        print(f"Analyses Required   : {len(analyses_required)} window keys")
         for key, spec in analyses_required.items():
-            # Show full key to verify format
             print(f"  - {key}")
             print(f"    → {spec}")
         print(f"Clarification       : {updated_state['need_clarification']}")
@@ -683,14 +676,14 @@ def validate_planner_output(planner_output: Dict[str, Any]) -> bool:
     Returns:
         True if valid, False otherwise
     """
-    required_fields = ["intent", "need_clarification", "data_contexts_required", "analyses_required"]
+    required_fields = ["intent", "need_clarification", "windows_required"]
     
     for field in required_fields:
         if field not in planner_output:
             print(f"❌ Missing required field: {field}")
             return False
     
-    valid_intents = ["trade", "trend", "compare", "explain", "price_check", "clarify"]
+    valid_intents = ["trade", "trend", "compare", "explain", "price_check", "clarify", "historical"]
     if planner_output["intent"] not in valid_intents:
         print(f"❌ Invalid intent: {planner_output['intent']}")
         return False
@@ -724,9 +717,9 @@ def system_validator(state: Dict[str, Any]) -> ValidationResult:
     Pure Python function with NO LLM calls.
     
     ENFORCES STRICT RULES:
-    1. ALL required fields (symbols, horizon, timeframe, start_datetime, end_datetime) must be complete
+    1. ALL required fields (symbols, horizon, timeframe, window_type) must be complete
     2. No guessing - if information is missing, request clarification
-    3. Validate analyses_required is appropriate for intent
+    3. Validate windows_required is appropriate for intent
     
     This prevents unsafe financial advice by enforcing:
     - Complete information before data fetch
@@ -741,23 +734,13 @@ def system_validator(state: Dict[str, Any]) -> ValidationResult:
     """
     
     intent = state.get("intent", "")
-    data_contexts_required = state.get("data_contexts_required", [])
+    windows_required = state.get("windows_required", [])
     analyses_required = state.get("analyses_required", {})
-    # Derive flat analysis list from analyses_required
-    analyses_required_dict = state.get("analyses_required", {})
-    required_analyses_set = set()
-    for spec in analyses_required_dict.values():
-        if isinstance(spec, dict):
-            required_analyses_set.update(spec.get("run", []))
     
-    # Extract symbols and other info from data_contexts_required
-    symbols = [ctx.get("symbol") for ctx in data_contexts_required]
-    timeframes = list(set([ctx.get("timeframe") for ctx in data_contexts_required]))
-    timeframe = timeframes[0] if timeframes else None
-    
-    # Extract horizon from analyses_required
-    horizons = list(set([spec.get("horizon") for spec in analyses_required.values()]))
-    horizon = horizons[0] if horizons else None
+    # Extract info from windows_required
+    symbols = [w.get("symbol") for w in windows_required if w.get("symbol")]
+    timeframes = list(set([w.get("timeframe") for w in windows_required if w.get("timeframe")]))
+    horizons = list(set([w.get("horizon") for w in windows_required if w.get("horizon")]))
     
     # ========================================================================
     # RULE 0: Check if planner already requested clarification
@@ -772,124 +755,77 @@ def system_validator(state: Dict[str, Any]) -> ValidationResult:
         )
     
     # ========================================================================
-    # RULE 1: MANDATORY - Validate analyses_required completeness
-    # These intents require at least one analysis context
+    # RULE 1: Analysis intents require at least one window
     # ========================================================================
     
     if intent in ["trade", "trend", "compare"]:
-        # These intents require analyses_required (contexts to analyze)
-        # data_contexts_required is OPTIONAL (for dialogue raw data only)
-        if not analyses_required:
+        if not windows_required:
             return ValidationResult(
                 approved=False,
-                reason="Missing analysis contexts for analysis intent",
+                reason="Missing windows for analysis intent",
                 clarification="Which asset would you like to analyze? Please provide the ticker symbol (e.g., AAPL for Apple, BTC-USD for Bitcoin)."
             )
     
     # ========================================================================
-    # RULE 1.5: For price_check - only validate data_contexts_required
+    # RULE 1.5: Price check requires at least one window (with empty run list)
     # ========================================================================
     
     if intent == "price_check":
-        # Price check only needs data contexts, no analysis required
-        if not data_contexts_required:
+        if not windows_required:
             return ValidationResult(
                 approved=False,
-                reason="Missing data contexts for price check",
+                reason="Missing windows for price check",
                 clarification="Which asset would you like to check the price for? Please provide the ticker symbol (e.g., AAPL, BTC-USD)."
             )
-        
-        # Validate each data context completeness
-        for ctx in data_contexts_required:
-            missing_fields = []
+    
+    # ========================================================================
+    # RULE 2: Validate each window spec completeness
+    # ========================================================================
+    
+    if intent in ["trade", "trend", "compare", "price_check"]:
+        for w in windows_required:
+            missing = []
+            if not w.get("symbol"):
+                missing.append("symbol")
+            if not w.get("timeframe"):
+                missing.append("timeframe")
+            if not w.get("horizon"):
+                missing.append("horizon")
+            if not w.get("window_type"):
+                missing.append("window_type")
             
-            if not ctx.get("symbol"):
-                missing_fields.append("symbol")
-            if not ctx.get("timeframe"):
-                missing_fields.append("timeframe")
-            if not ctx.get("start_datetime"):
-                missing_fields.append("start_datetime")
-            if not ctx.get("end_datetime"):
-                missing_fields.append("end_datetime")
+            wtype = w.get("window_type", "").upper()
+            if wtype == "ROLLING" and not w.get("lookback"):
+                missing.append("lookback")
+            elif wtype == "HISTORICAL":
+                if not w.get("start"):
+                    missing.append("start")
+                if not w.get("end"):
+                    missing.append("end")
             
-            if missing_fields:
+            if missing:
                 return ValidationResult(
                     approved=False,
-                    reason=f"Incomplete DataContext: missing {', '.join(missing_fields)}",
-                    clarification=f"I need complete information for {ctx.get('symbol', 'the asset')}. Missing: {', '.join(missing_fields)}."
-                )
-        
-        # Price check is valid if we have data contexts
-        return ValidationResult(approved=True, reason="Valid price check query")
-    
-    # ========================================================================
-    # RULE 2: Validate data_contexts_required for analysis intents
-    # ========================================================================
-    
-    if intent in ["trade", "trend", "compare"]:
-        for ctx in data_contexts_required:
-            missing_fields = []
-            
-            if not ctx.get("symbol"):
-                missing_fields.append("symbol")
-            if not ctx.get("timeframe"):
-                missing_fields.append("timeframe")
-            if not ctx.get("start_datetime"):
-                missing_fields.append("start_datetime")
-            if not ctx.get("end_datetime"):
-                missing_fields.append("end_datetime")
-            
-            if missing_fields:
-                return ValidationResult(
-                    approved=False,
-                    reason=f"Incomplete DataContext: missing {', '.join(missing_fields)}",
-                    clarification=f"I need complete information for {ctx.get('symbol', 'the asset')}. Missing: {', '.join(missing_fields)}."
-                )
-        
-        # Validate analyses_required has entries and proper structure
-        for ctx_key, spec in analyses_required.items():
-            if not spec.get("horizon"):
-                return ValidationResult(
-                    approved=False,
-                    reason=f"Missing horizon in analyses_required for {ctx_key}",
-                    clarification="Internal error: missing analysis specification. Please rephrase your query."
-                )
-            if not spec.get("run") or not isinstance(spec.get("run"), list):
-                return ValidationResult(
-                    approved=False,
-                    reason=f"Missing or invalid 'run' list for {ctx_key}",
-                    clarification="Internal error: missing analysis specification. Please rephrase your query."
+                    reason=f"Incomplete window spec: missing {', '.join(missing)}",
+                    clarification=f"I need complete information for {w.get('symbol', 'the asset')}. Missing: {', '.join(missing)}."
                 )
     
     # ========================================================================
-    # RULE 2: Validate horizon is present in all analyses_required entries
-    # This prevents unsafe financial advice by ensuring appropriate timeframe selection
+    # RULE 3: Horizon consistency across all windows
     # ========================================================================
     
-    if intent in ["trade", "trend", "compare"]:
-        for ctx_key, spec in analyses_required.items():
-            if not spec.get("horizon"):
-                return ValidationResult(
-                    approved=False,
-                    reason=f"Missing horizon for {ctx_key}",
-                    clarification="What trading horizon are you interested in? For example: intraday (minutes to hours), swing trading (days to weeks), or long-term (months)?"
-                )
-        
-        # Check horizon consistency across all contexts
-        if horizons and len(horizons) > 1:
-            return ValidationResult(
-                approved=False,
-                reason="Mixed horizons in single query",
-                clarification=f"I found multiple trading horizons ({', '.join(horizons)}). Please specify which one you'd like to focus on."
-            )
+    if intent in ["trade", "trend", "compare"] and len(horizons) > 1:
+        return ValidationResult(
+            approved=False,
+            reason="Mixed horizons in single query",
+            clarification=f"I found multiple trading horizons ({', '.join(horizons)}). Please specify which one you'd like to focus on."
+        )
     
     # ========================================================================
-    # RULE 3: Comparison intent must have consistent timeframes
-    # This prevents unsafe financial advice by ensuring apples-to-apples comparisons
+    # RULE 4: Comparison intent must have consistent timeframes
     # ========================================================================
     
-    if intent == "compare" and len(data_contexts_required) > 1:
-        # Check for consistent timeframe across contexts
+    if intent == "compare" and len(windows_required) > 1:
         if len(timeframes) > 1:
             return ValidationResult(
                 approved=False,
@@ -898,18 +834,14 @@ def system_validator(state: Dict[str, Any]) -> ValidationResult:
             )
     
     # ========================================================================
-    # RULE 4: Explain intent should not create new data contexts
-    # This prevents re-analysis for clarification questions
+    # RULE 5: Explain intent should not create new windows
     # ========================================================================
     
     if intent == "explain":
-        if data_contexts_required:
-            # Clear data contexts for explain intent
-            state["data_contexts_required"] = []
+        if windows_required:
+            state["windows_required"] = []
             state["analyses_required"] = {}
-            print(f"ℹ️  Explain intent: cleared data contexts to use cache only")
-        
-        # No need to set required_analyses - graph will route to dialogue automatically
+            print(f"ℹ️  Explain intent: cleared windows to use cache only")
         
         return ValidationResult(approved=True, reason="Using cached analysis for explanation")
     
@@ -919,8 +851,8 @@ def system_validator(state: Dict[str, Any]) -> ValidationResult:
     
     print(f"✓ System validation passed")
     print(f"  Intent: {intent}")
-    print(f"  Data Contexts: {len(data_contexts_required)}")
-    print(f"  Analyses Required: {len(analyses_required)} context mappings")
+    print(f"  Windows: {len(windows_required)}")
+    print(f"  Analyses Required: {len(analyses_required)} window keys")
     
     return ValidationResult(approved=True, reason="All validations passed")
 

@@ -5,7 +5,7 @@ STRICT RULES:
 - NEVER changes decisions
 - NEVER runs analysis
 - NEVER triggers data fetch
-- Reads: analysis_store, data_contexts_required, conversation_summary, user_query
+- Reads: analysis_store, kline_data, conversation_summary, user_query
 - Produces: Natural language explanation only
 """
 
@@ -100,7 +100,7 @@ def format_context_for_dialogue(state: Dict[str, Any]) -> Dict[str, str]:
     Format all available context (analysis + price data) for dialogue agent.
     
     Args:
-        state: TradingAdvisorState with analysis_store and data_contexts_required
+        state: TradingAdvisorState with analysis_store and kline_data
         
     Returns:
         Dict with formatted strings for unified prompt
@@ -191,31 +191,29 @@ def format_context_for_dialogue(state: Dict[str, Any]) -> Dict[str, str]:
     
     # Format price data context
     price_data_parts = []
-    data_contexts_required = state.get("data_contexts_required", [])
     kline_data = state.get("kline_data", {})
     
     # Track failed fetches
     failed_symbols = []
     
-    if data_contexts_required and kline_data:
-        for ctx in data_contexts_required:
-            ctx_key = ctx.get("key", "")
-            if not ctx_key:
-                continue
+    if kline_data:
+        from analysis_store_util import parse_window_key
+        for window_key, data in kline_data.items():
+            try:
+                parsed = parse_window_key(window_key)
+                symbol = parsed["symbol"]
+                timeframe = parsed["timeframe"]
+            except (ValueError, KeyError):
+                symbol = "Unknown"
+                timeframe = "Unknown"
             
-            symbol = ctx.get("symbol", "Unknown")
-            timeframe = ctx.get("timeframe", "Unknown")
-            
-            # Check if fetch failed (None value) or key doesn't exist
-            if ctx_key not in kline_data:
-                continue
-            
-            if kline_data[ctx_key] is None:
-                # Fetch failed for this symbol
+            # Check if fetch failed (None value)
+            if data is None:
                 failed_symbols.append(f"{symbol} ({timeframe})")
                 continue
             
-            data = kline_data[ctx_key]
+            if not data:
+                continue
             
             dates = data.get("Datetime", [])
             opens = data.get("Open", [])
@@ -366,7 +364,7 @@ def create_dialogue_agent(llm):
     
     This agent:
     - Runs for ALL queries (after analysis agents if applicable)
-    - Reads all available context (analysis_store, data_contexts_required, conversation_summary)
+    - Reads all available context (analysis_store, kline_data, conversation_summary)
     - NEVER changes decisions or runs analysis
     - Produces natural language explanation adapted to what's available
     - User-facing and conversational

@@ -102,51 +102,45 @@ def is_decision_stale(
 
 def should_run_decision(
     state: Dict[str, Any],
-    context_key: str,
-    horizon: str
+    window_key: str,
 ) -> bool:
     """
-    Determine if decision agent should run for a given context.
+    Determine if decision agent should run for a given window.
     
     Decision runs if:
-    1. Explicitly listed in analyses_required[context_key].run, OR
+    1. Explicitly listed in analyses_required[window_key].run, OR
     2. Decision exists but is stale (upstream agents have newer ran_at)
     
     Args:
         state: TradingAdvisorState
-        context_key: Data context key
-        horizon: Trading horizon
+        window_key: Window identity key (ROLLING or HISTORICAL)
         
     Returns:
         True if decision should run, False otherwise
     """
     analyses_required = state.get("analyses_required", {})
-    spec = analyses_required.get(context_key, {})
+    spec = analyses_required.get(window_key, {})
     run_list = spec.get("run", [])
     
     # Check if explicitly requested
     if "decision" in run_list:
         return True
     
+    # Extract horizon from window key
+    from analysis_store_util import parse_window_key
+    try:
+        parsed = parse_window_key(window_key)
+        horizon = parsed["horizon"]
+    except (ValueError, KeyError):
+        horizon = "intraday"
+    
     # Check freshness
     analysis_store = state.get("analysis_store", {})
-    
-    # Build store key: "{symbol}|{timeframe}|{start}:{end}|{horizon}"
-    parts = context_key.split("|")
-    if len(parts) != 3:
-        return False
-    
-    symbol = parts[0]
-    timeframe = parts[1]
-    start_datetime, end_datetime = parts[2].split(":")
-    
-    store_key = f"{symbol}|{timeframe}|{start_datetime}:{end_datetime}|{horizon}"
-    
-    analysis_entry = analysis_store.get(store_key, {})
+    analysis_entry = analysis_store.get(window_key, {})
     
     if is_decision_stale(analysis_entry, horizon):
-        print(f"  🔄 Decision stale for {context_key}, will rerun")
+        print(f"  🔄 Decision stale for {window_key}, will rerun")
         return True
     
-    print(f"  ✓ Decision fresh for {context_key}, skipping")
+    print(f"  ✓ Decision fresh for {window_key}, skipping")
     return False

@@ -19,8 +19,9 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from analysis_store_util import (
     calculate_indicator_freshness,
+    force_dependents_to_run,
     is_agent_output_fresh,
-    make_analysis_store_key,
+    parse_window_key,
     store_agent_output,
 )
 from freshness_config import get_current_time_iso
@@ -39,45 +40,25 @@ def create_indicator_agent(llm, toolkit):
         analysis_store = state.get("analysis_store", {})
         kline_data = state.get("kline_data", {})
         
-        # Process each data context
-        for context_key, spec in analyses_required.items():
-            # Check if indicator is required for this context
+        # Process each window
+        for window_key, spec in analyses_required.items():
+            # Check if indicator is required for this window
             if "indicator" not in spec.get("run", []):
                 continue
 
-            horizon = spec.get("horizon")
-            if not horizon:
+            # Parse window key to get symbol/timeframe/horizon
+            try:
+                parsed = parse_window_key(window_key)
+            except ValueError:
                 spec["run"].remove("indicator")
                 continue
 
-            # context_key: "{symbol}|{timeframe}|{start}:{end}"
-            # Note: datetimes contain colons (e.g., 2026-01-13T10:30:00+05:30)
-            parts = context_key.split("|")
-            if len(parts) != 3:
-                spec["run"].remove("indicator")
-                continue
-            symbol = parts[0]
-            timeframe = parts[1]
-            datetime_range = parts[2]
-            
-            # Parse datetime range with timezone-aware regex
-            import re
-            match = re.match(r'^(.+?[+-]\d{2}:\d{2}):(.+)$', datetime_range)
-            if not match:
-                match = re.match(r'^(.+?Z):(.+)$', datetime_range)
-            if not match:
-                spec["run"].remove("indicator")
-                continue
-            start_datetime = match.group(1)
-            end_datetime = match.group(2)
+            symbol = parsed["symbol"]
+            timeframe = parsed["timeframe"]
+            horizon = parsed["horizon"]
 
-            store_key = make_analysis_store_key(
-                symbol=symbol,
-                timeframe=timeframe,
-                start_datetime=start_datetime,
-                end_datetime=end_datetime,
-                horizon=horizon,
-            )
+            # store_key IS window_key in the new model
+            store_key = window_key
             
             # Get current time
             current_time = get_current_time_iso()
@@ -91,13 +72,12 @@ def create_indicator_agent(llm, toolkit):
             
             # CACHE MISS or STALE - Run indicator analysis
             print(f"🔄 Running indicator analysis for {symbol}|{timeframe}|{horizon}")
-            print(f"   Context key (kline_data lookup): {context_key}")
-            print(f"   Store key (analysis_store): {store_key}")
+            print(f"   Window key: {window_key}")
             
-            # Get kline data for this context
-            context_kline_data = kline_data.get(context_key, {})
+            # Get kline data for this window
+            context_kline_data = kline_data.get(window_key, {})
             if not context_kline_data:
-                print(f"⚠️ No kline data available for {context_key}")
+                print(f"⚠️ No kline data available for {window_key}")
                 print(f"   Available kline_data keys: {list(kline_data.keys())}")
                 spec["run"].remove("indicator")
                 continue
@@ -135,6 +115,9 @@ def create_indicator_agent(llm, toolkit):
             )
             
             print(f"💾 Stored indicator analysis (fresh until {fresh_until})")
+            
+            # Cascade: indicator recomputed → force trend + decision to rerun
+            force_dependents_to_run(state, window_key, "indicator")
             
             # Remove from run list
             spec["run"].remove("indicator")
