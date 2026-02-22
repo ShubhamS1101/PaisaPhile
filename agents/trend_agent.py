@@ -1,12 +1,11 @@
 """
-Trend Agent with per-agent freshness tracking and chart management.
+Trend Agent — deterministic execution via resolve_run_lists().
 
 This agent:
 1. Reads analyses_required dict from state
-2. Checks freshness of cached trend analysis before running
-3. Generates trendline charts only if cache is stale or missing
-4. Stores results with metadata and chart path
-5. Tracks upstream_agents_reran for decision invalidation
+2. Executes ONLY if "trend" is in the resolved run list
+3. Generates trendline charts and stores results with freshness metadata
+4. Triggers downstream cascade (decision) via force_dependents_to_run
 """
 
 import copy
@@ -20,7 +19,6 @@ from langchain_core.messages import ToolMessage, HumanMessage, SystemMessage
 from analysis_store_util import (
     calculate_trend_freshness,
     force_dependents_to_run,
-    is_agent_output_fresh,
     parse_window_key,
     store_agent_output,
 )
@@ -36,6 +34,9 @@ def create_trend_agent(tool_llm, graph_llm, toolkit):
     def trend_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process all trend analysis requests from analyses_required.
+        
+        The run list is DETERMINISTICALLY resolved by resolve_run_lists()
+        before this agent executes.  If "trend" is in run → execute.
         """
         analyses_required = state.get("analyses_required", {})
         analysis_store = state.get("analysis_store", {})
@@ -44,7 +45,7 @@ def create_trend_agent(tool_llm, graph_llm, toolkit):
         
         # Process each window
         for window_key, spec in analyses_required.items():
-            # Check if trend is required for this window
+            # Authoritative gate: run list was set by resolve_run_lists
             if "trend" not in spec.get("run", []):
                 continue
 
@@ -65,14 +66,7 @@ def create_trend_agent(tool_llm, graph_llm, toolkit):
             # Get current time
             current_time = get_current_time_iso()
             
-            # CHECK FRESHNESS
-            if is_agent_output_fresh(analysis_store, store_key, "trend", current_time):
-                print(f"✅ Trend analysis CACHED and FRESH for {symbol}|{timeframe}|{horizon}")
-                # Remove from run list
-                spec["run"].remove("trend")
-                continue
-            
-            # CACHE MISS or STALE - Run trend analysis
+            # Run trend analysis
             print(f"🔄 Running trend analysis for {symbol}|{timeframe}|{horizon}")
             
             # Get kline data for this window

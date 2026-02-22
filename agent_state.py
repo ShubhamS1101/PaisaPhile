@@ -187,3 +187,22 @@ class TradingAdvisorState(TypedDict):
         Dict[str, Any],
         "Learned user preferences"
     ]
+
+    # ========================================================
+    # 6. CONVERSATIONAL CONVENIENCE FIELDS (per-turn, for memory)
+    # ========================================================
+
+    symbols: Annotated[
+        List[str],
+        "Symbols discussed this turn (extracted from windows_required + data_required)"
+    ]
+
+    horizon: Annotated[
+        Optional[str],
+        "Primary horizon this turn (intraday | swing | long_term)"
+    ]
+
+    decision: Annotated[
+        Optional[Dict[str, Any]],
+        "Latest decision result this turn (set by decision agent)"
+    ]

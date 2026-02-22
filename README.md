@@ -66,10 +66,15 @@ PaisaPhile serves as an **analytical toolkit and advisory assistant**, not an au
 ### 📊 **Comprehensive Technical Analysis**
 
 #### Indicator Analysis
+- **Deterministic Computation**: All indicators computed directly with TA-Lib (no LLM tool-calling)
+- **Time-Aligned Table Format**: Row-by-row indicator data aligned to datetime axis
+  - Table columns: `Datetime | Close | MACD | MACD_Signal | MACD_Hist | RSI | ROC | Stoch_K | Stoch_D | WillR`
+  - Last 28 candles for context, fully serialized for auditability
 - **Momentum Indicators**: RSI, Rate of Change (ROC)
 - **Trend Indicators**: MACD with signal line and histogram
 - **Volatility Indicators**: Stochastic Oscillator, Williams %R
-- **Horizon-Aware Interpretation**: Tailored analysis for intraday, swing, and long-term trading
+- **LLM Interpretation Only**: Single LLM call interprets the full table (not computing individual indicators)
+- **Horizon-Aware Analysis**: Tailored summaries for intraday, swing, and long-term trading
 
 #### Pattern Recognition
 - **Classical Candlestick Patterns**: Engulfing, Doji, Hammer, Shooting Star, etc.
@@ -94,11 +99,16 @@ PaisaPhile serves as an **analytical toolkit and advisory assistant**, not an au
 
 ### 💾 **Intelligent Caching & Freshness**
 
-- **Per-Agent Caching**: Each agent maintains separate cached results
-- **Freshness Windows**: Context-aware cache expiration based on timeframe and horizon
-- **Automatic Staleness Detection**: Decisions auto-refresh when underlying data changes
-- **Selective Recomputation**: Only stale analyses are re-run, minimizing API calls
-- **Metadata Tracking**: `created_at`, `ran_at`, `fresh_until` timestamps for every analysis
+- **Semantic Window Keys**: Data identified by context (symbol, timeframe, direction) not timestamps
+- **Per-Agent Freshness Tracking**: Each agent maintains independent cache expiration rules
+  - Indicator: 1 candle tolerance (stale after 1 new bar)
+  - Pattern: 4 candles (higher tolerance for slower pattern evolution)
+  - Trend: 8 candles (trend structure persists longer)
+  - Decision: Auto-triggers when upstream agents update
+- **LRU Eviction**: Active windows capped at 5 to prevent memory growth
+- **Metadata Tracking**: `created_at`, `ran_at`, `fresh_until`, `horizon` for every analysis
+- **Selective Recomputation**: Only stale analyses recompute; fresh cached results reused
+- **Active Window Summary**: Tracks which symbols/timeframes are currently analyzed
 
 ### 🔄 **Data Context Management**
 
@@ -110,11 +120,48 @@ PaisaPhile serves as an **analytical toolkit and advisory assistant**, not an au
 
 ---
 
+## 🔄 Recent Improvements (v2.1)
+
+### Indicator Agent Refactor
+**Complete redesign of technical indicator analysis for accuracy & efficiency:**
+
+- ✅ **Deterministic Computation**: Removed LLM tool-calling flakiness; all indicators computed directly with TA-Lib
+- ✅ **Time-Aligned Table Format**: Complete indicator values arranged in CSV-style table by datetime
+  - Columns: `Datetime | Close | MACD | MACD_Signal | MACD_Hist | RSI | ROC | Stoch_K | Stoch_D | WillR`
+  - Fully serialized and stored for complete auditability
+- ✅ **LLM Interpretation Layer**: Single API call interprets the full table (vs. 2-6 tool calls previously)
+- ✅ **Cost Reduction**: ~66% fewer API calls (1 call vs. 2-6 average)
+- ✅ **Reliability Improvement**: Deterministic compute never fails; LLM only handles interpretation
+
+### Architectural Enhancements
+- ✅ **Semantic Window Keys**: Replace timestamps with context-based identifiers for robust caching
+- ✅ **Deterministic Execution**: `resolve_run_lists()` is single source of truth for agent execution
+- ✅ **Flat Dependency Graph**: Simplified flow — indicator/pattern/trend → decision
+- ✅ **LRU Eviction**: Auto-cleanup of oldest windows when max (5) active windows reached
+- ✅ **Per-Agent Freshness**: Independent cache expiration rules per agent & horizon
+- ✅ **Conversational Improvements**: Explain intent now uses `context_hint` for pinpoint relevant analysis filtering
+
+---
+
 ## 🏗️ System Architecture
 
-PaisaPhile employs a **directed acyclic graph (DAG)** execution model orchestrated via **LangGraph**. The system consists of seven specialized agents with strict data flow boundaries:
+PaisaPhile employs a **directed acyclic graph (DAG)** execution model orchestrated via **LangGraph**. The system consists of seven specialized agents with strict data flow boundaries.
 
-```
+### Key Architectural Principles
+
+1. **Semantic Window Keys**: Data contexts identified by semantic keys, not timestamps
+   - `ROLLING` windows: `{symbol}|{timeframe}|ROLLING|{horizon}|{lookback}`
+   - `HISTORICAL` windows: `{symbol}|{timeframe}|HISTORICAL|{start}:{end}|{horizon}`
+
+2. **Deterministic Execution**: Single source of truth (`resolve_run_lists()`) determines which agents run
+
+3. **Per-Agent Freshness**: Each agent tracks cache staleness independently with horizon-aware windows
+
+4. **LRU Eviction**: Maximum 5 active windows per analysis_store to prevent unbounded growth
+
+5. **Flat Dependency Graph**: `indicator → decision`, `pattern → decision`, `trend → decision`
+
+### Execution Flow Diagram
 ┌─────────────────┐
 │  User Query     │
 └────────┬────────┘
@@ -176,26 +223,36 @@ PaisaPhile employs a **directed acyclic graph (DAG)** execution model orchestrat
 - Parse natural language queries into structured intent
 - Classify intent: `trade`, `trend`, `compare`, `price_check`, `explain`, `clarify`
 - Determine required data contexts (symbol, timeframe, datetime range)
+- Generate **semantic window keys** for context-based caching (ROLLING or HISTORICAL)
 - Specify which analyses to run (indicator, pattern, trend, decision)
+- Extract symbols & horizon to top-level state for conversation memory
 - Enforce Yahoo Finance API limits (1m: 4 days, 5m: 30 days, 15m: 60 days)
 - Handle timezone-aware datetime calculations
 
 **Input**: User query, conversation summary  
-**Output**: JSON execution plan with data contexts and analysis requirements
+**Output**: JSON execution plan with semantic window keys and analysis requirements
+
+**Semantic Window Key Examples**:
+- ROLLING: `AAPL|5m|ROLLING|intraday|480` → AAPL 5-min, intraday horizon, 480 min lookback
+- HISTORICAL: `BTC|1d|HISTORICAL|2025-12-01:2026-01-31|swing` → BTC daily, historical range
 
 **Key Features**:
 - **Conversation-Aware**: Uses memory to infer symbols from context
 - **Auto-Clarification**: Requests missing information instead of guessing
 - **Horizon Detection**: Automatically classifies as intraday, swing, or long-term
 - **Rolling Windows**: Prefers lookback-based requests over fixed session times
+- **Semantic Keys**: Context-based identification enables robust multi-symbol caching
 
 ---
 
 ### 2. Indicator Agent
 
-**Role**: Technical Indicator Computation
+**Role**: Technical Indicator Computation & Analysis
 
 **Responsibilities**:
+- Deterministically compute all indicators (no LLM tool-calling)
+- Build time-aligned indicator table (Datetime × indicators)
+- Pass table to LLM for interpretation only (not computation)
 - Compute momentum indicators: RSI, Rate of Change (ROC)
 - Compute trend indicators: MACD with signal line and histogram
 - Compute volatility indicators: Stochastic Oscillator, Williams %R
@@ -203,13 +260,34 @@ PaisaPhile employs a **directed acyclic graph (DAG)** execution model orchestrat
 - Store structured results with metadata
 
 **Input**: OHLCV data, timeframe, horizon  
-**Output**: Indicator values, interpretation, freshness metadata
+**Output**: Indicator table, raw values, LLM interpretation, freshness metadata
+
+**Execution Model** (3-Phase):
+
+1. **Deterministic Computation Phase**
+   - All 5 indicators computed directly (no LLM)
+   - Uses TA-Lib for reliable, fast calculation
+   - Zero API overhead for indicator computation
+
+2. **Table Building Phase**
+   - Time-aligned DataFrame: `Datetime | Close | MACD | MACD_Signal | MACD_Hist | RSI | ROC | Stoch_K | Stoch_D | WillR`
+   - All indicator arrays right-aligned to same length (None padded if shorter)
+   - Last 28 rows kept for conciseness
+   - Serialized as list of row dicts for storage
+
+3. **LLM Interpretation Phase**
+   - Single LLM call (no tools bound) receives full table as text
+   - Interprets current state: latest values, recent direction, signals
+   - Flags overbought/oversold/crossover/divergence conditions
+   - Provides bias (bullish/bearish/neutral) for specified horizon
+   - Produces natural language summary
 
 **Key Features**:
-- **Tool-Backed Computation**: Uses LangChain tool calling for reliable calculation
-- **Fallback Mechanisms**: Direct computation if LLM fails to call tools
-- **Horizon-Specific Interpretation**: Tailored insights for intraday vs. long-term
-- **Selective Updates**: Only recomputes if cache is stale
+- **Deterministic & Fast**: No LLM tool-calling flakiness, ~1 API call vs. 2-6 previously
+- **Fully Transparent**: Complete table included in storage for auditability
+- **Horizon-Aware**: Tailored interpretation for intraday, swing, or long-term
+- **Selective Updates**: Only recomputes if cache is stale (1 candle tolerance)
+- **Reliable Fallback**: Direct computation never fails, LLM-only for interpretation
 
 ---
 
@@ -292,16 +370,23 @@ PaisaPhile employs a **directed acyclic graph (DAG)** execution model orchestrat
 
 **Responsibilities**:
 - Explain cached analyses and decisions in natural language
-- Answer follow-up questions and clarifications
+- Answer follow-up questions and clarifications using planner-specified analyses
 - Provide educational context about indicators and patterns
 - Present price data in readable format
-- **Never runs new analyses or fetches data**: Read-only access to cached results
+- **Read-only access**: Never fetches data or runs new analyses
 
 **Input**: Analysis store, conversation summary, user query  
 **Output**: Natural language response
 
+**Explain Intent Flow** (Improved in v2.1):
+- Planner specifies which window and which agent outputs are relevant (via `context_hint`)
+- Dialogue agent filters to show **only** those agents (e.g., just "trend" for "what does the trend show?")
+- Previously would pass full store; now passes only pinpoint-relevant analysis
+- Reduces LLM context bloat and improves response accuracy
+
 **Key Features**:
 - **Adaptive Responses**: Tailors explanation based on available data
+- **Context-Filtered Output**: Uses `context_hint` to surface only relevant analyses
 - **Educational Mode**: Explains concepts when no analysis is available
 - **Data Presentation**: Formats OHLCV data for readability
 - **Error Communication**: Clear messages for failed fetches or missing data

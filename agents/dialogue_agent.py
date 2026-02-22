@@ -108,11 +108,21 @@ def format_context_for_dialogue(state: Dict[str, Any]) -> Dict[str, str]:
     # Get filtered analysis_store
     filtered_store = get_filtered_analysis_store(state)
     
+    # Build per-window context hints (which agents to surface)
+    # For explain intent, planner specifies which cached agents are relevant
+    analyses_required = state.get("analyses_required", {})
+    
     # Format analysis context
     analysis_parts = []
     
     if filtered_store:
         for key, entry in filtered_store.items():
+            # Determine which agents to show for this window
+            spec = analyses_required.get(key, {})
+            context_hint = spec.get("context_hint", [])  # set by validator for explain
+            # If no hint, show all available agents (trade/trend/compare intents)
+            show_agents = set(context_hint) if context_hint else {"indicator", "pattern", "trend", "decision"}
+            
             # Extract metadata from first available agent output
             metadata = None
             for agent_name in ["indicator", "pattern", "trend", "decision"]:
@@ -133,7 +143,7 @@ def format_context_for_dialogue(state: Dict[str, Any]) -> Dict[str, str]:
             analysis_parts.append(f"{'─'*50}\n")
             
             # Decision (if exists)
-            if "decision" in entry and entry["decision"]:
+            if "decision" in show_agents and "decision" in entry and entry["decision"]:
                 decision_output = entry["decision"]
                 decision_data = decision_output.get("result", {})
                 
@@ -158,7 +168,7 @@ def format_context_for_dialogue(state: Dict[str, Any]) -> Dict[str, str]:
                 analysis_parts.append("")
             
             # Indicator
-            if "indicator" in entry and entry["indicator"]:
+            if "indicator" in show_agents and "indicator" in entry and entry["indicator"]:
                 indicator_output = entry["indicator"]
                 indicator_data = indicator_output.get("result", {})
                 interpretation = indicator_data.get("interpretation", "")
@@ -168,7 +178,7 @@ def format_context_for_dialogue(state: Dict[str, Any]) -> Dict[str, str]:
                     analysis_parts.append("")
             
             # Pattern
-            if "pattern" in entry and entry["pattern"]:
+            if "pattern" in show_agents and "pattern" in entry and entry["pattern"]:
                 pattern_output = entry["pattern"]
                 pattern_data = pattern_output.get("result", {})
                 interpretation = pattern_data.get("interpretation", "")
@@ -178,7 +188,7 @@ def format_context_for_dialogue(state: Dict[str, Any]) -> Dict[str, str]:
                     analysis_parts.append("")
             
             # Trend
-            if "trend" in entry and entry["trend"]:
+            if "trend" in show_agents and "trend" in entry and entry["trend"]:
                 trend_output = entry["trend"]
                 trend_data = trend_output.get("result", {})
                 interpretation = trend_data.get("interpretation", "")
@@ -193,19 +203,34 @@ def format_context_for_dialogue(state: Dict[str, Any]) -> Dict[str, str]:
     price_data_parts = []
     kline_data = state.get("kline_data", {})
     
+    # Build data_id → {symbol, timeframe} lookup from data_required
+    data_id_map = {}
+    for item in state.get("data_required", []):
+        did = item.get("data_id", "")
+        if did:
+            data_id_map[did] = {
+                "symbol": item.get("symbol", "Unknown"),
+                "timeframe": item.get("timeframe", "Unknown"),
+            }
+    
     # Track failed fetches
     failed_symbols = []
     
     if kline_data:
         from analysis_store_util import parse_window_key
         for window_key, data in kline_data.items():
-            try:
-                parsed = parse_window_key(window_key)
-                symbol = parsed["symbol"]
-                timeframe = parsed["timeframe"]
-            except (ValueError, KeyError):
-                symbol = "Unknown"
-                timeframe = "Unknown"
+            # Resolve symbol/timeframe: try data_id lookup first, then parse_window_key
+            if window_key in data_id_map:
+                symbol = data_id_map[window_key]["symbol"]
+                timeframe = data_id_map[window_key]["timeframe"]
+            else:
+                try:
+                    parsed = parse_window_key(window_key)
+                    symbol = parsed["symbol"]
+                    timeframe = parsed["timeframe"]
+                except (ValueError, KeyError):
+                    symbol = "Unknown"
+                    timeframe = "Unknown"
             
             # Check if fetch failed (None value)
             if data is None:

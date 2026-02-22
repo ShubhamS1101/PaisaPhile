@@ -265,6 +265,16 @@ class TradingGraphV2:
                     )
             
             # ────────────────────────────────────────────
+            # Guard: clear run list for windows whose fetch failed
+            # ────────────────────────────────────────────
+            for window_key, spec in analyses_required.items():
+                if spec.get("data_needed", True) and not kline_data.get(window_key):
+                    failed_agents = spec.get("run", [])
+                    if failed_agents:
+                        print(f"  ⚠️ Fetch failed for {window_key} — removing agents from run list: {failed_agents}")
+                        spec["run"] = []
+
+            # ────────────────────────────────────────────
             # 2. Fetch for raw data requests (price_check etc.)
             # ────────────────────────────────────────────
             for item in data_required:
@@ -286,26 +296,30 @@ class TradingGraphV2:
     
     def _resolve_deps_node(self):
         """
-        Pre-execution dependency resolution.
+        DETERMINISTIC run-list resolution.
 
-        Runs ONCE after fetch and BEFORE any agent.
-        Checks freshness of each agent and cascades staleness
-        through the dependency graph:
+        Runs ONCE BEFORE fetch and BEFORE any agent.
+        Takes the planner's tentative run lists and deterministically
+        resolves them based on freshness + dependency graph:
 
-            indicator → trend → decision
-            pattern  ──────→ decision
+            indicator ──→ decision
+            pattern  ──→ decision
+            trend    ──→ decision
 
-        Modifies analyses_required[window_key]["run"] in-place.
+        After this node:
+        - spec["run"] is the AUTHORITATIVE list of agents that MUST execute.
+        - spec["data_needed"] tells fetch whether to download data for this window.
+        - If ALL windows have data_needed=False, fetch is skipped entirely.
         """
         def node(state: TradingAdvisorState) -> Dict[str, Any]:
-            from analysis_store_util import propagate_staleness
+            from analysis_store_util import resolve_run_lists
             print(f"\n{'─'*60}")
-            print(f"RESOLVING DEPENDENCIES")
+            print(f"DETERMINISTIC RUN-LIST RESOLUTION")
             print(f"{'─'*60}")
-            propagate_staleness(state)
+            resolve_run_lists(state)
             # Show final run lists
             for wk, sp in state.get("analyses_required", {}).items():
-                print(f"  {wk}: run={sp.get('run', [])}")
+                print(f"  ▸ {wk}: run={sp.get('run', [])}  data_needed={sp.get('data_needed')}")
             print(f"{'─'*60}\n")
             return {"analyses_required": state.get("analyses_required", {})}
 
@@ -376,17 +390,28 @@ class TradingGraphV2:
         - user_preferences: (cleared - can be kept if needed)
         """
         def node(state: TradingAdvisorState) -> Dict[str, Any]:
+            # LRU eviction: keep at most 5 active windows
+            from analysis_store_util import evict_lru_windows
+            analysis_store = state.get("analysis_store", {})
+            evicted = evict_lru_windows(analysis_store, max_active=5)
+            if evicted:
+                print(f"\n📦 Archived {len(evicted)} LRU window(s): {evicted}")
+            
             # Note: We DON'T clear explanation here because it's the output
             # It will be cleared at the start of the NEXT query in test_interactive.py
             return {
                 "user_query": None,
-                "intent": "trade",  # Reset to default
+                "intent": None,
                 "need_clarification": False,
                 "windows_required": [],
                 "analyses_required": {},
                 "data_required": [],
                 "kline_data": {},
-                "user_preferences": {}  # Clear preferences (or keep if you want persistence)
+                "user_preferences": {},
+                "analysis_store": analysis_store,
+                "symbols": [],
+                "horizon": None,
+                "decision": None,
             }
         
         return node
@@ -436,36 +461,77 @@ class TradingGraphV2:
             data_required = state.get("data_required", [])
             
             if intent == "clarify" and has_explanation:
-                print(f"   \u2192 Routing to DIALOGUE (clarification needed)")
+                print(f"   → Routing to DIALOGUE (clarification needed)")
                 return "dialogue"
             
-            if analyses_required or data_required:
-                print(f"   \u2192 Routing to FETCH ({len(analyses_required)} windows + {len(data_required)} data requests)")
-                return "fetch"
+            if intent == "explain":
+                # Explain uses analyses_required as a FILTER only — skip resolve/fetch
+                print(f"   → Routing to DIALOGUE (explain intent, {len(analyses_required)} context windows)")
+                return "dialogue"
+            
+            if analyses_required:
+                # Has analysis windows → resolve freshness first
+                print(f"   → Routing to RESOLVE ({len(analyses_required)} windows)")
+                return "resolve"
+            
+            if data_required:
+                # Only raw data requests (price_check) → fetch directly
+                print(f"   → Routing to FETCH ({len(data_required)} data requests, no analysis)")
+                return "fetch_only"
             
             print(f"   → Routing to DIALOGUE (no analyses required)")
+            return "dialogue"
+        
+        def route_after_resolve(state: Dict[str, Any]) -> str:
+            """
+            After resolve_run_lists, decide whether to fetch or skip.
+            - If any window has data_needed=True → fetch
+            - If data_required has items → fetch (always for price_check)
+            - If ALL windows are fresh (data_needed=False) → skip to dialogue
+            """
+            analyses_required = state.get("analyses_required", {})
+            data_required = state.get("data_required", [])
+            
+            needs_fetch = any(
+                spec.get("data_needed", False)
+                for spec in analyses_required.values()
+            )
+            
+            if needs_fetch or data_required:
+                print(f"   → FETCH needed (analysis windows: {needs_fetch}, data requests: {len(data_required)})")
+                return "fetch"
+            
+            print(f"   ⏸️  ALL FRESH — skipping fetch and agents → DIALOGUE")
             return "dialogue"
         
         def route_after_fetch(state: Dict[str, Any]) -> str:
             """
             After fetch, decide whether to run analysis agents or skip to dialogue.
-            - If analyses_required has items: go to analysis pipeline
+            - If analyses_required has items with agents to run: go to pipeline
             - If only data_required (price_check): skip straight to dialogue
             - If all fetches failed: skip to dialogue with error
             """
             kline_data = state.get("kline_data", {})
             analyses_required = state.get("analyses_required", {})
             
-            # If no analysis windows, skip to dialogue (data_required only)
-            if not analyses_required:
-                print("   \u2192 Data-only request, skipping to DIALOGUE")
+            # Check if any window has agents to run
+            has_work = any(
+                spec.get("run", [])
+                for spec in analyses_required.values()
+            )
+            
+            if not has_work:
+                print("   → No agents to run, skipping to DIALOGUE")
                 return "dialogue"
             
-            # Check if we have any valid data
-            has_valid_data = any(data is not None for data in kline_data.values())
+            # Check if we have any valid data for analysis windows
+            has_valid_data = any(
+                kline_data.get(wk) is not None
+                for wk in analyses_required
+            )
             
-            if not has_valid_data and kline_data:
-                print("\u26a0\ufe0f  All data fetches failed - skipping analysis agents")
+            if not has_valid_data:
+                print("⚠️  All analysis data fetches failed - skipping agents")
                 return "dialogue"
             
             return "indicator"
@@ -482,16 +548,22 @@ class TradingGraphV2:
         graph.add_conditional_edges(
             "validator",
             route_after_validate,
+            {"resolve": "resolve_deps", "fetch_only": "fetch", "dialogue": "dialogue"}
+        )
+        
+        # After resolve: fetch if needed, or skip to dialogue if all fresh
+        graph.add_conditional_edges(
+            "resolve_deps",
+            route_after_resolve,
             {"fetch": "fetch", "dialogue": "dialogue"}
         )
         
-        # Route after fetch - check if data was successfully retrieved
+        # After fetch: run agents if work remains, or skip to dialogue
         graph.add_conditional_edges(
             "fetch",
             route_after_fetch,
-            {"indicator": "resolve_deps", "dialogue": "dialogue"}
+            {"indicator": "indicator", "dialogue": "dialogue"}
         )
-        graph.add_edge("resolve_deps", "indicator")
         graph.add_edge("indicator", "pattern")
         graph.add_edge("pattern", "trend")
         graph.add_edge("trend", "decision")

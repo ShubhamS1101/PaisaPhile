@@ -195,19 +195,24 @@ def get_horizon_from_key(key: str) -> str:
 # STATIC DEPENDENCY GRAPH
 # ============================================================================
 #
-#   indicator ──→ trend ──→ decision
-#   pattern  ─────────────→ decision
+#   indicator ──→ decision
+#   pattern  ──→ decision
+#   trend    ──→ decision
+#
+# All three analysis agents read raw kline_data independently.
+# Only decision reads their outputs. There are NO inter-agent
+# dependencies among indicator, pattern, and trend.
 #
 # Rules:
-#   - If indicator is stale/recomputed → trend AND decision must rerun
-#   - If trend is stale/recomputed     → decision must rerun
+#   - If indicator is stale/recomputed → decision must rerun
 #   - If pattern is stale/recomputed   → decision must rerun
+#   - If trend is stale/recomputed     → decision must rerun
 #   - If decision is stale             → NO back-propagation
 # ============================================================================
 
 # Maps each agent to its direct downstream dependents
 AGENT_DEPENDENTS = {
-    "indicator": ["trend", "decision"],
+    "indicator": ["decision"],
     "pattern": ["decision"],
     "trend": ["decision"],
     "decision": [],  # No back-propagation
@@ -217,7 +222,7 @@ AGENT_DEPENDENTS = {
 AGENT_DEPENDENCIES = {
     "indicator": [],
     "pattern": [],
-    "trend": ["indicator"],
+    "trend": [],
     "decision": ["indicator", "pattern", "trend"],
 }
 
@@ -290,6 +295,107 @@ def propagate_staleness(
                 f"  📡 Dependency cascade for {window_key}: "
                 f"{list(will_run)} → adding {added}"
             )
+
+
+def resolve_run_lists(
+    state: Dict[str, Any],
+    current_time: Optional[str] = None,
+) -> None:
+    """
+    DETERMINISTIC run-list resolver — THE single source of truth.
+
+    Called ONCE after fetch and BEFORE any agent.  Replaces the planner's
+    tentative ``run`` list with the exact set of agents that *must* execute.
+
+    Algorithm (per window in analyses_required):
+    1. Start with the planner's *desired* agents (what the user asked for).
+    2. For each desired agent, check analysis_store freshness:
+       • Fresh  → remove (skip)
+       • Stale  → keep (will re-run)
+       • Missing → keep (first run)
+    3. Check agents NOT in the desired set that EXIST but are stale
+       — they need to re-run too, because stale data poisons dependents.
+    4. Cascade: for every agent that will run, add its transitive
+       dependents (indicator → trend → decision, pattern → decision).
+    5. If the desired set included ``decision`` but step 2 removed it
+       (because it was fresh), and no upstream agent is re-running,
+       decision stays removed. Otherwise it gets re-added by cascade.
+    6. Final: if any agent remains in the run list ⇒ ``data_needed=True``.
+       If none remain ⇒ ``data_needed=False`` (all fresh, fetch can skip).
+
+    This means:
+    • Agents do NOT need their own freshness checks (though they may keep
+      them as a defensive safety net).
+    • The LLM's run list is a *hint* (desired analysis depth), not the plan.
+    • Freshness + dependency propagation is 100% deterministic.
+    """
+    if current_time is None:
+        current_time = get_current_time_iso()
+
+    analyses_required = state.get("analyses_required", {})
+    analysis_store = state.get("analysis_store", {})
+    analysis_agents = ["indicator", "pattern", "trend", "decision"]
+
+    for window_key, spec in analyses_required.items():
+        desired = list(spec.get("run", []))  # planner's wish list
+        entry = analysis_store.get(window_key, {})
+
+        # ── Step 1-2: Filter desired to only stale/missing ──────────
+        must_run: set = set()
+        for agent in desired:
+            if agent == "decision":
+                # Decision freshness is derived; always add if desired
+                must_run.add("decision")
+                continue
+            if not is_agent_output_fresh(analysis_store, window_key, agent, current_time):
+                must_run.add(agent)
+            # else: fresh → skip
+
+        # ── Step 3: Discover stale agents outside the desired set ────
+        #   E.g., indicator is NOT in desired, but it's stale in cache.
+        #   It poisons trend/decision, so it must re-run.
+        for agent in analysis_agents:
+            if agent in must_run or agent == "decision":
+                continue
+            if entry.get(agent) is not None:
+                if not is_agent_output_fresh(analysis_store, window_key, agent, current_time):
+                    must_run.add(agent)
+
+        # ── Step 4: Cascade dependents ────────────────────────────
+        cascaded: set = set()
+        for agent in list(must_run):
+            if agent == "decision":
+                continue  # decision is a leaf; it doesn't propagate
+            for dep in get_dependents(agent):
+                cascaded.add(dep)
+        must_run |= cascaded
+
+        # ── Step 5: If nothing upstream re-runs, decision can skip ─
+        upstream_running = must_run & {"indicator", "pattern", "trend"}
+        if not upstream_running and "decision" in must_run:
+            # Decision was desired but all upstreams are fresh.
+            # Check if decision itself is stale or missing.
+            if decision_is_stale(window_key, analysis_store):
+                pass  # keep decision in must_run
+            else:
+                must_run.discard("decision")
+
+        # ── Step 6: Finalise ───────────────────────────────────────
+        # Sort in execution order: indicator → pattern → trend → decision
+        exec_order = [a for a in analysis_agents if a in must_run]
+        spec["run"] = exec_order
+        spec["data_needed"] = len(exec_order) > 0
+
+        # Logging
+        skipped = set(desired) - must_run
+        if skipped:
+            print(
+                f"  ✅ {window_key}: skipping fresh agents {sorted(skipped)}"
+            )
+        if exec_order:
+            print(f"  🔄 {window_key}: will run {exec_order}")
+        else:
+            print(f"  ⏸️  {window_key}: ALL fresh — nothing to run")
 
 
 def force_dependents_to_run(
@@ -391,14 +497,16 @@ def get_filtered_analysis_store(
     """
     Extract analysis_store entries relevant to the current query.
 
-    In the new model, window_id IS the store key, so filtering is direct:
-    just look up each key from analyses_required.
+    Returns ONLY windows listed in analyses_required.
+    If analyses_required is empty, returns empty dict.
+    The planner is responsible for specifying relevant windows,
+    even for explain intent (with run: []).
     """
     analysis_store = state.get("analysis_store", {})
     analyses_required = state.get("analyses_required", {})
 
     if not analyses_required:
-        return analysis_store
+        return {}
 
     filtered: Dict[str, Dict[str, Any]] = {}
     for window_key in analyses_required:
@@ -416,9 +524,11 @@ def init_window_entry(
     analysis_store: Dict[str, Any], window_key: str
 ) -> None:
     """
-    Initialize a new window entry in the store if it doesn't exist.
+    Ensure a window entry exists and is active.
 
-    Sets status="active" and last_accessed to now.
+    - If the key is NEW: creates a fresh entry with status="active".
+    - If the key EXISTS but is archived: re-activates it (keeps cached data).
+    - If the key EXISTS and is active: just touches last_accessed.
     """
     if window_key not in analysis_store:
         analysis_store[window_key] = {
@@ -432,6 +542,12 @@ def init_window_entry(
             "trend": None,
             "decision": None,
         }
+    elif analysis_store[window_key].get("status") == "archive":
+        # Re-activate: keeps cached agent results, updates timestamp
+        activate_window(analysis_store, window_key)
+    else:
+        # Already active — just refresh timestamp
+        touch_window(analysis_store, window_key)
 
 
 def touch_window(
@@ -466,6 +582,48 @@ def get_active_windows(
     return {
         k: v for k, v in analysis_store.items() if v.get("status") == "active"
     }
+
+
+def summarize_active_windows(
+    analysis_store: Dict[str, Any],
+    current_time: Optional[str] = None,
+) -> str:
+    """
+    Build a concise text summary of active windows for the planner LLM.
+
+    Returns something like::
+
+        ACTIVE WINDOWS IN CACHE:
+        1. BEL.NS|5m|ROLLING|intraday|4d → indicator✓ pattern✓ trend✓ decision✓
+        2. AAPL|1d|HISTORICAL|2024-01-01:2024-06-30|long_term → indicator✓ trend✓ decision✓ (pattern missing)
+
+    If there are no active windows, returns "No active windows in cache."
+    """
+    if current_time is None:
+        current_time = get_current_time_iso()
+
+    active = get_active_windows(analysis_store)
+    if not active:
+        return "No active windows in cache."
+
+    agent_names = ["indicator", "pattern", "trend", "decision"]
+    lines = ["ACTIVE WINDOWS IN CACHE:"]
+
+    for idx, (key, entry) in enumerate(active.items(), 1):
+        parts = []
+        for agent in agent_names:
+            if agent in entry and entry[agent] is not None:
+                # Check freshness
+                if is_agent_output_fresh(analysis_store, key, agent, current_time):
+                    parts.append(f"{agent}✓")
+                else:
+                    parts.append(f"{agent}⏳")  # stale
+            else:
+                parts.append(f"{agent}✗")
+        agents_str = " ".join(parts)
+        lines.append(f"  {idx}. {key}  →  {agents_str}")
+
+    return "\n".join(lines)
 
 
 def get_archived_windows(
