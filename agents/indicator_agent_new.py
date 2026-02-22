@@ -1,16 +1,17 @@
-"""Indicator Agent — deterministic computation + LLM interpretation.
+"""
+Indicator Agent — deterministic computation + LLM interpretation.
 
 This agent:
 1. Reads analyses_required dict from state
-2. Executes ONLY if "indicator" is in the resolved run list
+2. Checks freshness of cached indicator analysis before running
 3. Computes ALL indicators deterministically (no LLM tool-calling)
 4. Builds a time-aligned indicator table (Datetime × indicators)
 5. Passes the table to the LLM for interpretation only
-6. Stores results with freshness metadata
-7. Triggers downstream cascade (trend + decision) via force_dependents_to_run
+6. Stores results with metadata (created_at, fresh_until)
 """
 
 import copy
+import json
 import pandas as pd
 from typing import Dict, Any, List
 
@@ -19,7 +20,7 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from analysis_store_util import (
     calculate_indicator_freshness,
-    force_dependents_to_run,
+    is_agent_output_fresh,
     parse_window_key,
     store_agent_output,
 )
@@ -34,9 +35,6 @@ def create_indicator_agent(llm, toolkit):
     def indicator_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process all indicator analysis requests from analyses_required.
-        
-        The run list is DETERMINISTICALLY resolved by resolve_run_lists()
-        before this agent executes.  If "indicator" is in run → execute.
         """
         analyses_required = state.get("analyses_required", {})
         analysis_store = state.get("analysis_store", {})
@@ -44,7 +42,7 @@ def create_indicator_agent(llm, toolkit):
         
         # Process each window
         for window_key, spec in analyses_required.items():
-            # Authoritative gate: run list was set by resolve_run_lists
+            # Check if indicator is required for this window
             if "indicator" not in spec.get("run", []):
                 continue
 
@@ -65,7 +63,14 @@ def create_indicator_agent(llm, toolkit):
             # Get current time
             current_time = get_current_time_iso()
             
-            # Run indicator analysis
+            # CHECK FRESHNESS
+            if is_agent_output_fresh(analysis_store, store_key, "indicator", current_time):
+                print(f"✅ Indicator analysis CACHED and FRESH for {symbol}|{timeframe}|{horizon}")
+                # Remove from run list
+                spec["run"].remove("indicator")
+                continue
+            
+            # CACHE MISS or STALE - Run indicator analysis
             print(f"🔄 Running indicator analysis for {symbol}|{timeframe}|{horizon}")
             print(f"   Window key: {window_key}")
             
@@ -111,10 +116,7 @@ def create_indicator_agent(llm, toolkit):
             
             print(f"💾 Stored indicator analysis (fresh until {fresh_until})")
             
-            # Safety net cascade: indicator recomputed → force trend + decision
-            force_dependents_to_run(state, window_key, "indicator")
-            
-            # Remove from run list (mark done)
+            # Remove from run list
             spec["run"].remove("indicator")
 
         return {"analysis_store": analysis_store}

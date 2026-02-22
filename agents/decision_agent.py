@@ -16,7 +16,6 @@ import re
 from typing import Any, Dict, List
 
 from analysis_store_util import (
-    decision_is_stale,
     get_filtered_analysis_store,
     parse_window_key,
     store_agent_output,
@@ -215,6 +214,10 @@ def generate_decision(state: Dict[str, Any], llm) -> Dict[str, Any]:
 
     # Process each window
     for window_key, spec in analyses_required.items():
+        # Authoritative gate: run list was set by resolve_run_lists
+        if "decision" not in spec.get("run", []):
+            continue
+
         # Parse window key to get symbol/timeframe/horizon
         try:
             parsed = parse_window_key(window_key)
@@ -227,53 +230,19 @@ def generate_decision(state: Dict[str, Any], llm) -> Dict[str, Any]:
 
         # store_key IS window_key in the new model
         store_key = window_key
-
-        planner_requested = "decision" in spec.get("run", [])
-        stale = decision_is_stale(store_key, analysis_store)
         
         # Get entry and check what analyses are available
         entry = analysis_store.get(store_key) or {}
         available_analyses = [agent for agent in ["indicator", "pattern", "trend"] 
                             if isinstance(entry.get(agent), dict) and entry.get(agent).get("result")]
         
-        print(f"🔄 Checking decision for {store_key}")
-        print(f"   Planner requested: {planner_requested}")
-        print(f"   Decision stale: {stale}")
+        print(f"🔄 Running decision for {store_key}")
         print(f"   Available analyses: {available_analyses}")
-        
-        # Decision logic:
-        # 1. If planner assigned decision → run with whatever data available
-        # 2. If decision exists but stale AND any upstream analysis exists → rerun
-        # 3. If no analyses available at all → skip
         
         if not available_analyses:
             print(f"   ⚠️ No upstream analyses available - cannot make decision")
-            if not planner_requested:
-                continue
-            # If planner explicitly requested but no data, we'll try anyway and let LLM handle it
-        
-        # Check if any upstream analysis just ran (has fresh ran_at)
-        upstream_just_ran = False
-        for agent in available_analyses:
-            agent_data = entry.get(agent, {})
-            if agent_data.get("metadata", {}).get("ran_at"):
-                # If ran_at exists and decision is stale, upstream likely just updated
-                upstream_just_ran = True
-                break
-        
-        # Decide whether to run
-        should_run = (
-            planner_requested or  # Explicitly assigned
-            (stale and available_analyses) or  # Stale with data available
-            (upstream_just_ran and available_analyses)  # New upstream data
-        )
-        
-        if not should_run:
-            print(f"   ⏭️  Skipping decision (fresh and not requested)")
             continue
         
-        print(f"   ▶️  Running decision with available data: {available_analyses}")
-
         formatted = _format_single_context_analysis(entry)
         
         # Build decision prompt

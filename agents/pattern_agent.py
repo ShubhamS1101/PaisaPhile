@@ -1,12 +1,11 @@
 """
-Pattern Agent with per-agent freshness tracking and chart management.
+Pattern Agent — deterministic execution via resolve_run_lists().
 
 This agent:
 1. Reads analyses_required dict from state
-2. Checks freshness of cached pattern analysis before running
-3. Generates pattern charts only if cache is stale or missing
-4. Stores results with metadata and chart path
-5. Tracks upstream_agents_reran for decision invalidation
+2. Executes ONLY if "pattern" is in the resolved run list
+3. Generates pattern charts and stores results with freshness metadata
+4. Triggers downstream cascade (decision) via force_dependents_to_run
 """
 
 import copy
@@ -21,7 +20,6 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from analysis_store_util import (
     calculate_pattern_freshness,
     force_dependents_to_run,
-    is_agent_output_fresh,
     parse_window_key,
     store_agent_output,
 )
@@ -37,6 +35,9 @@ def create_pattern_agent(tool_llm, graph_llm, toolkit):
     def pattern_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process all pattern analysis requests from analyses_required.
+        
+        The run list is DETERMINISTICALLY resolved by resolve_run_lists()
+        before this agent executes.  If "pattern" is in run → execute.
         """
         analyses_required = state.get("analyses_required", {})
         analysis_store = state.get("analysis_store", {})
@@ -45,7 +46,7 @@ def create_pattern_agent(tool_llm, graph_llm, toolkit):
         
         # Process each window
         for window_key, spec in analyses_required.items():
-            # Check if pattern is required for this window
+            # Authoritative gate: run list was set by resolve_run_lists
             if "pattern" not in spec.get("run", []):
                 continue
 
@@ -66,14 +67,7 @@ def create_pattern_agent(tool_llm, graph_llm, toolkit):
             # Get current time
             current_time = get_current_time_iso()
             
-            # CHECK FRESHNESS
-            if is_agent_output_fresh(analysis_store, store_key, "pattern", current_time):
-                print(f"✅ Pattern analysis CACHED and FRESH for {symbol}|{timeframe}|{horizon}")
-                # Remove from run list
-                spec["run"].remove("pattern")
-                continue
-            
-            # CACHE MISS or STALE - Run pattern analysis
+            # Run pattern analysis
             print(f"🔄 Running pattern analysis for {symbol}|{timeframe}|{horizon}")
             
             # Get kline data for this window

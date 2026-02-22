@@ -32,7 +32,7 @@ config = {
     "conversation_summary_llm_provider": "gemini",
     "conversation_summary_llm_model": "gemini-2.5-flash",
     "conversation_summary_llm_temperature": 0.3,
-    "gemini_api_key": "AIzaSyCCCoHv7PNNuvMOy-mdi_boZAeY0DOp-8I",
+    "gemini_api_key": "AIzaSyB5VRrMfAvu4DBkt9cFbCeOXAYw0DgcJLA",
 }
 
 def cleanup_output_folders():
@@ -163,8 +163,10 @@ def main():
             state.pop("intent", None)
             state.pop("symbols", None)
             state.pop("horizon", None)
+            state.pop("decision", None)
             state.pop("analyses_required", None)
             state.pop("windows_required", None)
+            state.pop("data_required", None)
             
             # Invoke graph
             print(f"🔄 Processing: \"{user_input}\"\n")

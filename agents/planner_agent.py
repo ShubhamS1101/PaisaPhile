@@ -113,8 +113,25 @@ OUTPUT JSON SCHEMA (STRICT)
     }}
   ],
 
+  "data_required": [
+    {{
+      "symbol": "<ticker>",
+      "timeframe": "<timeframe>"
+    }}
+  ],
+
   "clarification_question": "<string|null>"
 }}
+
+NOTE ON "run":
+The "run" array tells the system what DEPTH of analysis the user wants.
+It is a HINT, NOT the final execution plan. The system DETERMINISTICALLY
+resolves the actual agent list based on cache freshness and dependency
+graph. You do NOT need to worry about cache state — just express the
+user's intent accurately:
+- Full analysis → ["indicator", "pattern", "trend", "decision"]
+- Quick opinion → ["trend", "decision"]
+- The system will skip agents that are already fresh.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 WINDOW TYPE RULES:
@@ -144,14 +161,15 @@ LOOKBACK RULES BY TIMEFRAME:
 1w  → max lookback: "10y"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CRITICAL RULES FOR windows_required:
+CRITICAL RULES FOR windows_required / data_required:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 - NEVER use placeholder keys like "INTENT_ANALYSIS" or "ANALYSIS_1"
 - Each window MUST have symbol, timeframe, horizon, and window_type
 - ROLLING windows MUST have lookback
 - HISTORICAL windows MUST have start and end
-- For price_check intent: set run to [] (empty list) — data only
-- For explain intent: windows_required MUST be empty []
+- For price_check intent: use data_required (NOT windows_required)
+- For explain intent: use windows_required with run: [] to reference the relevant cached window(s). data_required MUST be empty []
+- If explain has no relevant cached window (general knowledge question), windows_required MAY be empty []
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EXAMPLES
@@ -182,14 +200,11 @@ Query: "What's the current price of AAPL?"
 {{
   "intent": "price_check",
   "need_clarification": false,
-  "windows_required": [
+  "windows_required": [],
+  "data_required": [
     {{
       "symbol": "AAPL",
-      "timeframe": "1d",
-      "horizon": "intraday",
-      "window_type": "ROLLING",
-      "lookback": "2d",
-      "run": []
+      "timeframe": "1d"
     }}
   ],
   "clarification_question": null
@@ -208,6 +223,47 @@ Query: "hi"
 Example 4: Follow-up question about existing analysis
 Query: "what is the RSI of it?"
 CONVERSATION_SUMMARY: "User asked for BEL.NS intraday analysis. System provided HOLD recommendation."
+ACTIVE WINDOWS: BEL.NS|5m|ROLLING|intraday|4d  [indicator: ✓  pattern: ✓  trend: ✓  decision: ✓]
+
+{{
+  "intent": "explain",
+  "need_clarification": false,
+  "windows_required": [
+    {{
+      "symbol": "BEL.NS",
+      "timeframe": "5m",
+      "horizon": "intraday",
+      "window_type": "ROLLING",
+      "lookback": "4d",
+      "run": ["indicator"]
+    }}
+  ],
+  "clarification_question": null
+}}
+
+Example 4b: Follow-up about trend
+Query: "what does the trend show?"
+CONVERSATION_SUMMARY: "User analyzed BEL.NS for swing. System gave HOLD."
+ACTIVE WINDOWS: BEL.NS|1d|ROLLING|swing|90d  [indicator: ✓  pattern: ✓  trend: ✓  decision: ✓]
+
+{{
+  "intent": "explain",
+  "need_clarification": false,
+  "windows_required": [
+    {{
+      "symbol": "BEL.NS",
+      "timeframe": "1d",
+      "horizon": "swing",
+      "window_type": "ROLLING",
+      "lookback": "90d",
+      "run": ["trend"]
+    }}
+  ],
+  "clarification_question": null
+}}
+
+Example 4c: General knowledge question (no cached window needed)
+Query: "what is RSI?"
 
 {{
   "intent": "explain",
@@ -295,8 +351,11 @@ Use intent = "explain" when the query:
 CRITICAL RULE FOR FOLLOW-UP QUESTIONS:
 If the query uses "it", "that", or other pronouns referring to previously analyzed assets,
 AND does not introduce a new symbol or explicitly request re-analysis,
-ALWAYS use intent = "explain" with NO windows_required and NO analyses_required.
-The dialogue agent will use cached analysis from conversation context.
+ALWAYS use intent = "explain" and reference the relevant cached window with
+the specific agents whose output the user is asking about in run: [...].
+The dialogue agent will show ONLY the cached data for those agents.
+Identify the window from ACTIVE WINDOWS list + conversation summary.
+If it's a general knowledge question, use windows_required: [] (no window needed).
 
 Use intent = "trade" / "trend" / "compare" ONLY when:
 - a NEW symbol is explicitly introduced in the query
@@ -333,8 +392,8 @@ HISTORICAL windows:
 - Example: "AAPL|1d|HISTORICAL|2024-01-01:2024-06-30|long_term"
 
 For price_check/explain intents:
-- price_check: use a ROLLING window with run: [] (data only, no analysis)
-- explain: windows_required MUST be empty (uses cached data)
+- price_check: use data_required (raw data only, NO windows_required)
+- explain: use windows_required with run: [] to reference cached window(s). data_required MUST be empty
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 WINDOW REQUIREMENTS (STRICT)
@@ -397,7 +456,7 @@ Rules:
    Use HISTORICAL with start/end as YYYY-MM-DD
 
 4. If intent = "explain":
-   windows_required MUST be EMPTY (use cached analysis)
+   Include the relevant window(s) with run: [] to reference cached analysis
 
 NEVER leave lookback empty for ROLLING windows.
 NEVER leave start/end empty for HISTORICAL windows.
@@ -442,13 +501,48 @@ compare:
 - full → ["indicator", "trend", "decision"]
 
 price_check:
-→ []
+→ windows_required: [], data_required: [{{"symbol": "<ticker>", "timeframe": "<tf>"}}]
 
 explain:
-→ []
+→ For follow-ups about cached analysis: windows_required with relevant window AND specific agents in run
+  e.g., "what does trend show?" → run: ["trend"]
+  e.g., "explain the indicators" → run: ["indicator"]
+  e.g., "why HOLD?" → run: ["decision"]
+  e.g., "full summary" → run: ["indicator", "pattern", "trend", "decision"]
+→ For general knowledge (no cached window relevant): windows_required: []
 
 clarify:
-→ []
+→ windows_required: [], data_required: []
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+USING ACTIVE WINDOWS (CACHE AWARENESS)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The "ACTIVE WINDOWS IN CACHE" section above shows what the system already has.
+Use it to make smarter decisions:
+
+Legend:
+  ✓ = agent result is fresh (skip-safe)
+  ⏳ = agent result is stale (should re-run)
+  ✗ = agent result missing (must run)
+
+Rules:
+1. If a symbol+timeframe window already exists with ALL agents ✓:
+   → For follow-ups about the SAME analysis, prefer intent="explain"
+   → The explain intent uses cached data — zero cost, instant response
+
+2. If the user explicitly asks to re-analyze ("refresh", "update", "analyze again"):
+   → Use full run list. The system will skip fresh agents automatically.
+
+3. If a window exists but some agents are ⏳ or ✗:
+   → Include only the missing/stale agents plus their dependents in run
+   → Dependencies: indicator→trend→decision, pattern→decision
+   → Example: if indicator is ⏳, run: ["indicator", "trend", "decision"]
+
+4. If NO window exists for the requested symbol+timeframe:
+   → Use full run list as usual
+
+5. You do NOT need to be precise — the system has a safety net (resolve_deps)
+   that will add any missing dependents. But try to be efficient.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CLARIFICATION RULES (NO GUESSING)
@@ -536,6 +630,12 @@ def create_planner_agent(llm):
         if previous_intent:
             context_info += f"\nPrevious intent: {previous_intent}"
         
+        # Build active-windows summary so planner sees what's cached
+        from analysis_store_util import summarize_active_windows
+        active_windows_summary = summarize_active_windows(
+            state.get("analysis_store", {})
+        )
+        
         # --------------------------------------------------
         # 3. Call LLM planner with IST timezone and context
         # --------------------------------------------------
@@ -548,6 +648,10 @@ def create_planner_agent(llm):
             SystemMessage(content=f"""CURRENT_DATE: {current_date}
 CURRENT_TIME: {current_time} IST
 {context_info}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{active_windows_summary}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 {PLANNER_SYSTEM_PROMPT}
 
@@ -589,7 +693,7 @@ CURRENT_TIME: {current_time} IST
         # --------------------------------------------------
         # 4. Planner output → state update WITH new window model
         # --------------------------------------------------
-        from analysis_store_util import make_window_key
+        from analysis_store_util import make_window_key, make_data_id
 
         updated_state = {**state}
 
@@ -598,6 +702,18 @@ CURRENT_TIME: {current_time} IST
         # Extract windows_required (list of WindowSpec dicts from LLM)
         windows_required = planner_output.get("windows_required", [])
         updated_state["windows_required"] = windows_required
+
+        # ── Extract top-level convenience fields for conversation memory ──
+        # Symbols: from windows_required + data_required
+        all_symbols = [w.get("symbol") for w in windows_required if w.get("symbol")]
+        for item in planner_output.get("data_required", []):
+            if item.get("symbol"):
+                all_symbols.append(item["symbol"])
+        updated_state["symbols"] = list(dict.fromkeys(all_symbols))  # dedupe, preserve order
+
+        # Horizon: take the first one (they should all match after validation)
+        horizons = [w.get("horizon") for w in windows_required if w.get("horizon")]
+        updated_state["horizon"] = horizons[0] if horizons else None
         
         # Build analyses_required from windows_required
         # Each WindowSpec → window_key → {run: [...], data_needed: true}
@@ -618,6 +734,21 @@ CURRENT_TIME: {current_time} IST
         
         updated_state["analyses_required"] = analyses_required
 
+        # Extract data_required (for price_check — raw data without analysis)
+        data_required_raw = planner_output.get("data_required", [])
+        data_required = []
+        for item in data_required_raw:
+            symbol = item.get("symbol", "")
+            timeframe = item.get("timeframe", "1d")
+            if symbol:
+                data_id = make_data_id(symbol, timeframe)
+                data_required.append({
+                    "data_id": data_id,
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                })
+        updated_state["data_required"] = data_required
+
         need_clarification = planner_output.get("need_clarification", False)
         updated_state["need_clarification"] = need_clarification
 
@@ -629,6 +760,7 @@ CURRENT_TIME: {current_time} IST
             # Ensure no execution happens
             updated_state["windows_required"] = []
             updated_state["analyses_required"] = {}
+            updated_state["data_required"] = []
 
         # --------------------------------------------------
         # 5. Debug output (KEEP THIS while developing)
@@ -651,6 +783,9 @@ CURRENT_TIME: {current_time} IST
         for key, spec in analyses_required.items():
             print(f"  - {key}")
             print(f"    → {spec}")
+        print(f"Data Required       : {len(data_required)} items")
+        for item in data_required:
+            print(f"  - {item['data_id']} ({item['symbol']}|{item['timeframe']})")
         print(f"Clarification       : {updated_state['need_clarification']}")
         if updated_state.get("explanation"):
             print(f"Message             : {updated_state['explanation']}")
@@ -767,14 +902,15 @@ def system_validator(state: Dict[str, Any]) -> ValidationResult:
             )
     
     # ========================================================================
-    # RULE 1.5: Price check requires at least one window (with empty run list)
+    # RULE 1.5: Price check requires at least one data_required item
     # ========================================================================
     
     if intent == "price_check":
-        if not windows_required:
+        data_required = state.get("data_required", [])
+        if not data_required:
             return ValidationResult(
                 approved=False,
-                reason="Missing windows for price check",
+                reason="Missing data_required for price check",
                 clarification="Which asset would you like to check the price for? Please provide the ticker symbol (e.g., AAPL, BTC-USD)."
             )
     
@@ -834,14 +970,20 @@ def system_validator(state: Dict[str, Any]) -> ValidationResult:
             )
     
     # ========================================================================
-    # RULE 5: Explain intent should not create new windows
+    # RULE 5: Explain intent — keep windows as context filter, no agents run
     # ========================================================================
     
     if intent == "explain":
-        if windows_required:
-            state["windows_required"] = []
-            state["analyses_required"] = {}
-            print(f"ℹ️  Explain intent: cleared windows to use cache only")
+        # Explain uses analyses_required as a FILTER for dialogue.
+        # Preserve run list as "context_hint" so dialogue knows which
+        # cached agent outputs to surface. No agents actually execute.
+        analyses_required = state.get("analyses_required", {})
+        for wk, spec in analyses_required.items():
+            spec["context_hint"] = list(spec.get("run", []))  # save for dialogue
+            spec["run"] = []            # no agents execute
+            spec["data_needed"] = False  # no fetch
+        # Explain never fetches raw data
+        state["data_required"] = []
         
         return ValidationResult(approved=True, reason="Using cached analysis for explanation")
     

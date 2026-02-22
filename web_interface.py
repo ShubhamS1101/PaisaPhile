@@ -457,8 +457,12 @@ def chat():
             "kline_data": {},
             "explanation": None,
             "intent": None,
+            "symbols": [],
+            "horizon": None,
+            "decision": None,
             "analyses_required": {},
             "windows_required": [],
+            "data_required": [],
         }
         
         # Run the trading graph (same as test_interactive)

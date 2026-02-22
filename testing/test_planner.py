@@ -3,6 +3,10 @@
 Asks for a user query and prints the planner output JSON.
 """
 
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import json
 
 from trading_graph import TradingGraph
@@ -32,6 +36,7 @@ def create_initial_state(query: str) -> dict:
         "need_clarification": False,
         "windows_required": [],
         "analyses_required": {},
+        "data_required": [],
         
         # System fields
         "kline_data": {},
@@ -43,6 +48,11 @@ def create_initial_state(query: str) -> dict:
         # Memory
         "conversation_summary": "",
         "user_preferences": {},
+        
+        # Convenience fields
+        "symbols": [],
+        "horizon": None,
+        "decision": None,
     }
 
 
